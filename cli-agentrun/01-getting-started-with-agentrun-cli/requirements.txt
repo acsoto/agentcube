@@ -1,0 +1,15 @@
+# Requirements for the AgentRun CLI Getting Started Sample
+# This file contains dependencies needed to run the tutorial notebook
+
+# AgentRun CLI (install from local directory)
+# Install with: pip install -e ../../
+
+# For making HTTP requests to test the agent
+requests>=2.28.0
+
+# Jupyter notebook support
+jupyter>=1.0.0
+ipykernel>=6.0.0
+
+# Optional: For better notebook experience
+ipywidgets>=8.0.0

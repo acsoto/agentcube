@@ -6,24 +6,25 @@ This tutorial provides a comprehensive introduction to **AgentRun CLI**, a devel
 
 ### What You'll Build
 
-A **Sentiment Analysis Agent** that:
-- Analyzes text sentiment (positive, negative, neutral)
-- Provides confidence scores and detailed analysis
-- Exposes HTTP API endpoints for easy integration
-- Demonstrates best practices for agent development
+A **LangChain Agent** that:
+- Uses LangChain framework with tool-calling capabilities
+- Provides a Calculator tool for mathematical operations
+- Provides a Weather tool for location-based queries (mock data)
+- Exposes FastAPI endpoints for HTTP-based interactions
+- Demonstrates best practices for agent development with AgentRun CLI
 
 ### Tutorial Details
 
 | Information         | Details                                                                      |
 |:--------------------|:-----------------------------------------------------------------------------|
 | Tutorial type       | Practical/Hands-on                                                           |
-| Agent type          | HTTP API Service                                                             |
-| Framework           | Python HTTP Server                                                           |
+| Agent type          | LangChain-based API Service                                                  |
+| Framework           | LangChain + FastAPI                                                          |
 | Language            | Python 3.8+                                                                  |
 | Tutorial components | Local development, packaging, building, publishing, and invoking agents      |
 | Tutorial vertical   | Cross-vertical                                                               |
 | Example complexity  | Beginner-friendly                                                            |
-| Tools used          | AgentRun CLI, Docker                                                         |
+| Tools used          | AgentRun CLI, Docker, LangChain                                              |
 
 ## Prerequisites
 
@@ -33,6 +34,7 @@ Before starting this tutorial, ensure you have:
 - **Docker** installed and running
 - **Git** (for cloning the repository)
 - Basic understanding of Python and HTTP APIs
+- **OpenAI API key** (optional - agent works in mock mode without it)
 
 ## Quick Start
 
@@ -80,46 +82,70 @@ The tutorial notebook covers:
 ├── getting_started_with_agentrun_cli.ipynb     # Main tutorial notebook
 ├── requirements.txt                             # Python dependencies
 ├── images/                                      # Architecture diagrams
-└── agent/                                       # Example agent
-    ├── main.py                                  # Agent implementation
-    └── requirements.txt                         # Agent dependencies
+├── agent/                                       # Example agent
+│   ├── main.py                                  # Agent implementation
+│   ├── requirements.txt                         # Agent dependencies
+│   └── .env.example                             # Environment configuration example
+└── demo-agent/                                  # Reference implementation
+    ├── main.py                                  # Same as agent/main.py
+    ├── README.md                                # Demo agent documentation
+    └── .env.example                             # Environment example
 ```
 
-## The Sentiment Analysis Agent
+## The LangChain Agent
 
 The example agent provides:
 
 ### Endpoints
 
-- **`GET /health`** - Health check endpoint
-- **`POST /analyze`** - Analyze sentiment of a single text
-- **`POST /batch`** - Analyze sentiment of multiple texts
-- **`POST /`** - AgentCube invocation endpoint
+- **`GET /`** - Service information and health check
+- **`GET /health`** - Health check endpoint for orchestration
+- **`GET /tools`** - List available tools (Calculator, Weather)
+- **`POST /invoke`** - Invoke the agent with a prompt
 
 ### Features
 
-- Rule-based sentiment analysis
-- Support for positive and negative word detection
-- Intensifier handling ("very", "extremely", etc.)
-- Sentiment scoring and confidence levels
-- Batch processing capability
+- **LangChain Framework**: Uses LangChain's agent framework with tool support
+- **Tool Support**: Includes Calculator and Weather tools
+- **Mock Mode**: Works without OpenAI API key for testing
+- **Conversational Memory**: Maintains conversation context
+- **FastAPI Integration**: Modern async web framework
+- **Structured Responses**: JSON-based request/response models
+
+### Available Tools
+
+1. **Calculator Tool**
+   - Performs basic mathematical calculations
+   - Input: Mathematical expression (e.g., "2 + 2", "10 * 5")
+   - Output: Calculation result
+
+2. **Weather Tool**
+   - Provides weather information for cities (mock data)
+   - Input: City name (e.g., "Shanghai", "New York")
+   - Output: Weather description with temperature and humidity
 
 ### Example Usage
 
 ```python
-# Analyze a single text
-POST /analyze
+# Invoke the agent with a calculator query
+POST /invoke
 {
-  "text": "This is an amazing product! I love it!"
+  "prompt": "What is 25 multiplied by 4?",
+  "temperature": 0.7
 }
 
-# Response
+# Response (with OpenAI API key)
 {
-  "sentiment": "positive",
-  "score": 0.375,
-  "confidence": 0.75,
-  "positive_words_found": 2,
-  "negative_words_found": 0
+  "response": "The result of 25 multiplied by 4 is 100.",
+  "success": true,
+  "error": null
+}
+
+# Response (mock mode, without API key)
+{
+  "response": "[Mock Response] Received prompt: 'What is 25 multiplied by 4?'. This would normally use the Calculator tool to perform the calculation. (Set OPENAI_API_KEY environment variable for real agent responses)",
+  "success": true,
+  "error": null
 }
 ```
 
@@ -144,8 +170,8 @@ Prepares your agent workspace:
 
 ```bash
 agentrun pack -f agent \
-    --agent-name "sentiment-agent" \
-    --description "Sentiment analysis agent" \
+    --agent-name "langchain-agent" \
+    --description "LangChain agent with Calculator and Weather tools" \
     --language "python" \
     --entrypoint "python main.py" \
     --port 8080
@@ -172,7 +198,7 @@ Deploys to AgentCube:
 ```bash
 agentrun publish -f agent \
     --version "v1.0.0" \
-    --image-url "docker.io/myorg/sentiment-agent"
+    --image-url "docker.io/myorg/langchain-agent"
 ```
 
 ### 4. Invoke with `agentrun invoke`
@@ -181,7 +207,7 @@ Tests the deployed agent:
 
 ```bash
 agentrun invoke -f agent \
-    --payload '{"text": "This is great!"}'
+    --payload '{"prompt": "What is the weather in Shanghai?"}'
 ```
 
 ### 5. Check Status with `agentrun status`
@@ -201,6 +227,7 @@ agentrun status -f agent
 3. **Return structured JSON** - Make responses easy to parse
 4. **Handle errors gracefully** - Use proper HTTP status codes
 5. **Add logging** - Enable debugging with detailed logs
+6. **Support mock mode** - Allow testing without external API dependencies
 
 ### Configuration
 
@@ -209,6 +236,7 @@ agentrun status -f agent
 3. **Specify correct entrypoint** - Ensure proper agent startup
 4. **Choose appropriate build mode** - Local for dev, cloud for production
 5. **Use semantic versioning** - Track changes with proper versions
+6. **Document environment variables** - Provide `.env.example` file
 
 ### Deployment
 
@@ -225,7 +253,7 @@ agentrun status -f agent
 | `agentrun pack` | Package agent workspace | `agentrun pack -f ./agent --agent-name my-agent` |
 | `agentrun build` | Build container image | `agentrun build -f ./agent --verbose` |
 | `agentrun publish` | Publish to AgentCube | `agentrun publish -f ./agent --version v1.0.0` |
-| `agentrun invoke` | Test deployed agent | `agentrun invoke -f ./agent --payload '{"text": "test"}'` |
+| `agentrun invoke` | Test deployed agent | `agentrun invoke -f ./agent --payload '{"prompt": "test"}'` |
 | `agentrun status` | Check agent status | `agentrun status -f ./agent` |
 
 ## Troubleshooting
@@ -246,7 +274,7 @@ agentrun status -f agent
 
 **Problem**: "Port 8080 is already in use"
 - **Solution**: Stop other services using port 8080
-- **Alternative**: Change the port in agent_metadata.yaml
+- **Alternative**: Change the port in agent_metadata.yaml and .env file
 
 ### Build Failures
 
@@ -254,24 +282,33 @@ agentrun status -f agent
 - **Solution**: Check Dockerfile syntax and dependencies
 - **Debug**: Use `--verbose` flag for detailed logs
 
+### API Key Issues
+
+**Problem**: Agent requires OpenAI API key
+- **Solution**: The agent works in mock mode without API key for testing
+- **For production**: Set `OPENAI_API_KEY` environment variable
+- **Get key**: Visit https://platform.openai.com/api-keys
+
 ## Next Steps
 
 After completing this tutorial, you can:
 
-1. **Enhance the sentiment agent** with ML models
-2. **Add authentication** using custom headers
-3. **Implement streaming responses** for long-running tasks
-4. **Create multi-agent systems** with agent communication
-5. **Integrate external APIs** and services
-6. **Build custom agents** for your use cases
-7. **Explore cloud build mode** for serverless deployment
-8. **Set up monitoring** for production agents
+1. **Add your OpenAI API key** to enable real LangChain agent responses
+2. **Create custom tools** for your specific use cases
+3. **Integrate external APIs** and services as tools
+4. **Add authentication** using custom headers
+5. **Implement streaming responses** for long-running tasks
+6. **Create multi-agent systems** with agent communication
+7. **Build production agents** with monitoring and logging
+8. **Explore cloud build mode** for serverless deployment
 
 ## Additional Resources
 
 - [AgentRun CLI Documentation](../README.md)
 - [Quick Start Guide](../QUICKSTART.md)
 - [Example Agents](../examples/)
+- [LangChain Documentation](https://python.langchain.com/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [AgentCube Main Project](https://github.com/volcano-sh/agentcube)
 - [Issue Tracker](https://github.com/volcano-sh/agentcube/issues)
 

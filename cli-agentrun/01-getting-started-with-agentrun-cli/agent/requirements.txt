@@ -1,2 +1,11 @@
-# No external dependencies required for this basic agent
-# The agent uses only Python standard library modules
+# FastAPI and web server dependencies
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
+
+# LangChain and AI dependencies
+langchain>=0.0.300
+openai>=0.28.0
+
+# Note: OpenAI API key is optional
+# The agent will run in mock mode without it

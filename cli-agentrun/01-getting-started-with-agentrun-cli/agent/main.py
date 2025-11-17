@@ -1,301 +1,234 @@
-#!/usr/bin/env python3
 """
-Sentiment Analysis Agent - A practical example AI agent.
+Simple LangChain Agent Application for Testing AgentRun CLI
 
-This agent provides sentiment analysis capabilities via HTTP API,
-demonstrating how to build and deploy agents using AgentRun CLI.
+This is a minimal agent application that demonstrates:
+- LangChain agent with tools
+- FastAPI web server
+- JSON payload handling
+- Ready for containerization with AgentRun CLI
 """
 
 import os
 import json
-import re
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Dict, Any, List
-from datetime import datetime
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from langchain.agents import AgentType, initialize_agent, Tool
+from langchain.llms import OpenAI
+from langchain.memory import ConversationBufferMemory
 
 
-class SentimentAnalyzer:
-    """Simple rule-based sentiment analyzer for demonstration."""
-
-    def __init__(self):
-        # Positive and negative word lists for basic sentiment analysis
-        self.positive_words = {
-            'good', 'great', 'excellent', 'amazing', 'wonderful', 'fantastic',
-            'love', 'best', 'perfect', 'awesome', 'brilliant', 'outstanding',
-            'superb', 'happy', 'joy', 'delighted', 'pleased', 'satisfied',
-            'impressive', 'remarkable', 'exceptional', 'nice', 'beautiful'
-        }
-
-        self.negative_words = {
-            'bad', 'terrible', 'awful', 'horrible', 'poor', 'worst',
-            'hate', 'dislike', 'disappointed', 'sad', 'angry', 'upset',
-            'frustrating', 'annoying', 'useless', 'pathetic', 'dreadful',
-            'unpleasant', 'disgusting', 'inferior', 'mediocre', 'inadequate'
-        }
-
-        # Intensifiers
-        self.intensifiers = {
-            'very', 'extremely', 'incredibly', 'absolutely', 'really',
-            'quite', 'totally', 'completely', 'utterly', 'highly'
-        }
-
-    def analyze(self, text: str) -> Dict[str, Any]:
-        """
-        Analyze sentiment of the given text.
-
-        Args:
-            text: Input text to analyze
-
-        Returns:
-            Dictionary containing sentiment analysis results
-        """
-        if not text or not isinstance(text, str):
-            return {
-                "error": "Invalid input text",
-                "sentiment": "neutral",
-                "score": 0.0,
-                "confidence": 0.0
-            }
-
-        # Normalize text
-        text_lower = text.lower()
-        words = re.findall(r'\b\w+\b', text_lower)
-
-        if not words:
-            return {
-                "sentiment": "neutral",
-                "score": 0.0,
-                "confidence": 0.0,
-                "word_count": 0
-            }
-
-        # Count sentiment words
-        positive_count = 0
-        negative_count = 0
-        intensifier_count = 0
-
-        for i, word in enumerate(words):
-            # Check for intensifiers before sentiment words
-            multiplier = 1.5 if i > 0 and words[i-1] in self.intensifiers else 1.0
-
-            if word in self.positive_words:
-                positive_count += multiplier
-            elif word in self.negative_words:
-                negative_count += multiplier
-            elif word in self.intensifiers:
-                intensifier_count += 1
-
-        # Calculate sentiment score
-        total_sentiment_words = positive_count + negative_count
-
-        if total_sentiment_words == 0:
-            sentiment = "neutral"
-            score = 0.0
-            confidence = 0.0
-        else:
-            score = (positive_count - negative_count) / len(words)
-            confidence = min(total_sentiment_words / len(words) * 2, 1.0)
-
-            if score > 0.05:
-                sentiment = "positive"
-            elif score < -0.05:
-                sentiment = "negative"
-            else:
-                sentiment = "neutral"
-
-        return {
-            "sentiment": sentiment,
-            "score": round(score, 4),
-            "confidence": round(confidence, 4),
-            "word_count": len(words),
-            "positive_words_found": int(positive_count),
-            "negative_words_found": int(negative_count),
-            "intensifiers_found": intensifier_count
-        }
-
-    def batch_analyze(self, texts: List[str]) -> List[Dict[str, Any]]:
-        """Analyze multiple texts at once."""
-        return [self.analyze(text) for text in texts]
+# Initialize FastAPI app
+app = FastAPI(
+    title="Simple LangChain Test Agent",
+    description="A simple agent for testing AgentRun CLI pack and build commands",
+    version="1.0.0"
+)
 
 
-class SentimentAgentHandler(BaseHTTPRequestHandler):
-    """HTTP handler for the Sentiment Analysis Agent."""
-
-    analyzer = SentimentAnalyzer()
-
-    def do_GET(self):
-        """Handle GET requests."""
-        if self.path == '/health':
-            self._send_json_response({
-                "status": "healthy",
-                "agent": "sentiment-analysis-agent",
-                "version": "1.0.0",
-                "timestamp": self._get_timestamp()
-            })
-        elif self.path == '/':
-            self._send_json_response({
-                "name": "Sentiment Analysis Agent",
-                "description": "Analyzes sentiment of text inputs",
-                "version": "1.0.0",
-                "endpoints": [
-                    "GET /health - Health check",
-                    "POST /analyze - Analyze single text",
-                    "POST /batch - Analyze multiple texts",
-                    "GET / - Agent information"
-                ]
-            })
-        else:
-            self._send_error(404, "Endpoint not found")
-
-    def do_POST(self):
-        """Handle POST requests."""
-        if self.path == '/analyze':
-            self._handle_analyze()
-        elif self.path == '/batch':
-            self._handle_batch()
-        elif self.path == '/':
-            # Support AgentCube invocation format
-            self._handle_invoke()
-        else:
-            self._send_error(404, "Endpoint not found")
-
-    def _handle_analyze(self):
-        """Handle single text analysis."""
-        try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-
-            text = data.get('text', '')
-            if not text:
-                self._send_error(400, "Text field is required")
-                return
-
-            result = self.analyzer.analyze(text)
-            result['timestamp'] = self._get_timestamp()
-            result['agent'] = 'sentiment-analysis-agent'
-
-            self._send_json_response(result)
-
-        except json.JSONDecodeError:
-            self._send_error(400, "Invalid JSON payload")
-        except Exception as e:
-            self._send_error(500, f"Internal error: {str(e)}")
-
-    def _handle_batch(self):
-        """Handle batch text analysis."""
-        try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-
-            texts = data.get('texts', [])
-            if not texts or not isinstance(texts, list):
-                self._send_error(400, "texts field must be a non-empty array")
-                return
-
-            results = self.analyzer.batch_analyze(texts)
-
-            response = {
-                'results': results,
-                'count': len(results),
-                'timestamp': self._get_timestamp(),
-                'agent': 'sentiment-analysis-agent'
-            }
-
-            self._send_json_response(response)
-
-        except json.JSONDecodeError:
-            self._send_error(400, "Invalid JSON payload")
-        except Exception as e:
-            self._send_error(500, f"Internal error: {str(e)}")
-
-    def _handle_invoke(self):
-        """Handle AgentCube-style invocation."""
-        try:
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-
-            # Support both 'text' and 'prompt' fields
-            text = data.get('text') or data.get('prompt', '')
-
-            if not text:
-                self._send_error(400, "text or prompt field is required")
-                return
-
-            result = self.analyzer.analyze(text)
-            result['timestamp'] = self._get_timestamp()
-            result['agent'] = 'sentiment-analysis-agent'
-            result['input'] = text
-
-            self._send_json_response(result)
-
-        except json.JSONDecodeError:
-            self._send_error(400, "Invalid JSON payload")
-        except Exception as e:
-            self._send_error(500, f"Internal error: {str(e)}")
-
-    def _send_json_response(self, data: Dict[str, Any], status_code: int = 200):
-        """Send JSON response."""
-        self.send_response(status_code)
-        self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.end_headers()
-
-        response = json.dumps(data, indent=2)
-        self.wfile.write(response.encode('utf-8'))
-
-    def _send_error(self, status_code: int, message: str):
-        """Send error response."""
-        self.send_response(status_code)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-
-        error_response = json.dumps({
-            "error": message,
-            "status_code": status_code,
-            "timestamp": self._get_timestamp()
-        }, indent=2)
-
-        self.wfile.write(error_response.encode('utf-8'))
-
-    def _get_timestamp(self) -> str:
-        """Get current timestamp in ISO format."""
-        return datetime.now().isoformat()
-
-    def log_message(self, format, *args):
-        """Custom logging to reduce noise."""
-        if os.environ.get('DEBUG', 'false').lower() == 'true':
-            super().log_message(format, *args)
+# Request/Response models
+class AgentRequest(BaseModel):
+    prompt: str
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 500
 
 
-def main():
-    """Main function to run the Sentiment Analysis Agent."""
-    port = int(os.environ.get('PORT', 8080))
+class AgentResponse(BaseModel):
+    response: str
+    success: bool
+    error: Optional[str] = None
 
-    print("=" * 60)
-    print("🤖 Sentiment Analysis Agent")
-    print("=" * 60)
-    print(f"📡 Starting server on port {port}")
-    print(f"🏥 Health check: http://localhost:{port}/health")
-    print(f"📊 Analyze endpoint: http://localhost:{port}/analyze")
-    print(f"📚 Batch endpoint: http://localhost:{port}/batch")
-    print(f"🎯 Invoke endpoint: http://localhost:{port}/")
-    print("=" * 60)
 
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, SentimentAgentHandler)
+# Simple calculator tool
+def calculate(expression: str) -> str:
+    """
+    Simple calculator that evaluates mathematical expressions.
 
+    Args:
+        expression: A mathematical expression like "2 + 2" or "10 * 5"
+
+    Returns:
+        The result of the calculation
+    """
     try:
-        print(f"✅ Sentiment Analysis Agent is running!")
-        print(f"💡 Press Ctrl+C to stop the server")
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print(f"\n🛑 Shutting down Sentiment Analysis Agent...")
-        httpd.server_close()
-        print("👋 Goodbye!")
+        # Only allow basic arithmetic operations for safety
+        allowed_chars = set("0123456789+-*/() .")
+        if not all(c in allowed_chars for c in expression):
+            return "Error: Only basic arithmetic operations are allowed"
+
+        result = eval(expression)
+        return str(result)
+    except Exception as e:
+        return f"Error calculating: {str(e)}"
 
 
-if __name__ == '__main__':
-    main()
+# Weather tool (mock)
+def get_weather(location: str) -> str:
+    """
+    Get weather information for a location (mock implementation).
+
+    Args:
+        location: City name or location
+
+    Returns:
+        Weather information string
+    """
+    # This is a mock implementation - returns static data
+    mock_weather = {
+        "shanghai": "Sunny, 22°C, Humidity 60%",
+        "beijing": "Cloudy, 18°C, Humidity 45%",
+        "new york": "Rainy, 15°C, Humidity 80%",
+        "london": "Foggy, 12°C, Humidity 75%",
+    }
+
+    location_lower = location.lower()
+    weather = mock_weather.get(location_lower, f"Weather data not available for {location}")
+    return weather
+
+
+# Initialize tools
+tools = [
+    Tool(
+        name="Calculator",
+        func=calculate,
+        description="Useful for performing mathematical calculations. Input should be a mathematical expression like '2 + 2' or '10 * 5'."
+    ),
+    Tool(
+        name="Weather",
+        func=get_weather,
+        description="Useful for getting weather information for a city. Input should be a city name like 'Shanghai' or 'New York'."
+    )
+]
+
+
+# Initialize LLM and agent (will be created per request to allow custom parameters)
+def create_agent(temperature: float = 0.7):
+    """Create a new agent instance with specified parameters."""
+
+    # Check for OpenAI API key
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        # For testing without OpenAI, we'll use a mock response
+        return None
+
+    llm = OpenAI(
+        temperature=temperature,
+        openai_api_key=api_key,
+        max_tokens=500
+    )
+
+    memory = ConversationBufferMemory(memory_key="chat_history")
+
+    agent = initialize_agent(
+        tools=tools,
+        llm=llm,
+        agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
+        verbose=True,
+        memory=memory
+    )
+
+    return agent
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "LangChain Test Agent",
+        "version": "1.0.0",
+        "endpoints": {
+            "/": "Health check",
+            "/invoke": "Invoke agent with a prompt",
+            "/tools": "List available tools"
+        }
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint for container orchestration."""
+    return {"status": "healthy"}
+
+
+@app.get("/tools")
+async def list_tools():
+    """List available tools."""
+    return {
+        "tools": [
+            {
+                "name": tool.name,
+                "description": tool.description
+            }
+            for tool in tools
+        ]
+    }
+
+
+@app.post("/invoke", response_model=AgentResponse)
+async def invoke_agent(request: AgentRequest):
+    """
+    Invoke the agent with a prompt.
+
+    Args:
+        request: AgentRequest containing prompt and optional parameters
+
+    Returns:
+        AgentResponse with the agent's response
+    """
+    try:
+        # Create agent with specified temperature
+        agent = create_agent(temperature=request.temperature)
+
+        if agent is None:
+            # Mock response when OpenAI API key is not available
+            response_text = f"[Mock Response] Received prompt: '{request.prompt}'. "
+
+            # Provide different responses based on prompt content
+            if "calculate" in request.prompt.lower() or any(c in request.prompt for c in "+-*/"):
+                response_text += "This would normally use the Calculator tool to perform the calculation."
+            elif "weather" in request.prompt.lower():
+                response_text += "This would normally use the Weather tool to fetch weather information."
+            else:
+                response_text += "This would normally process your request using LangChain with OpenAI."
+
+            response_text += " (Set OPENAI_API_KEY environment variable for real agent responses)"
+
+            return AgentResponse(
+                response=response_text,
+                success=True,
+                error=None
+            )
+
+        # Run the agent
+        result = agent.run(request.prompt)
+
+        return AgentResponse(
+            response=result,
+            success=True,
+            error=None
+        )
+
+    except Exception as e:
+        return AgentResponse(
+            response="",
+            success=False,
+            error=str(e)
+        )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    # Get port from environment variable or use default
+    port = int(os.getenv("PORT", "8080"))
+
+    print(f"Starting LangChain Test Agent on port {port}...")
+    print(f"OpenAI API Key configured: {bool(os.getenv('OPENAI_API_KEY'))}")
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )

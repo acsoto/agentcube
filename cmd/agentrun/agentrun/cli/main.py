@@ -17,6 +17,7 @@ from agentrun.runtime.build_runtime import BuildRuntime
 from agentrun.runtime.invoke_runtime import InvokeRuntime
 from agentrun.runtime.pack_runtime import PackRuntime
 from agentrun.runtime.publish_runtime import PublishRuntime
+from agentrun.runtime.status_runtime import StatusRuntime
 from agentrun.services.metadata_service import MetadataService
 
 # Initialize rich console for beautiful output
@@ -449,10 +450,10 @@ def status(
     of the agent associated with the workspace.
     """
     try:
-        runtime = InvokeRuntime(verbose=verbose, use_k8s=use_k8s)
+        runtime = StatusRuntime(verbose=verbose, use_k8s=use_k8s)
         workspace_path = Path(workspace).resolve()
 
-        status_info = runtime.get_agent_status(workspace_path, use_k8s=use_k8s)
+        status_info = runtime.get_status(workspace_path, use_k8s=use_k8s)
 
         if status_info.get("status") == "not_published":
             console.print("❌ No agent found. Please publish an agent first.")
@@ -476,6 +477,14 @@ def status(
 
         if status_info.get("agent_endpoint"):
             table.add_row("Endpoint", status_info["agent_endpoint"])
+
+        # Add last activity if available (from AgentCube)
+        if status_info.get("last_activity"):
+            table.add_row("Last Activity", status_info["last_activity"])
+
+        # Add note if available (e.g., when API is unavailable)
+        if status_info.get("note"):
+            table.add_row("Note", status_info["note"])
 
         # Add K8s-specific information if available
         if "k8s_deployment" in status_info:

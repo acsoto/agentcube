@@ -1,0 +1,20 @@
+# Conversational Assistant Agent Dependencies
+
+# Note: This agent uses mostly built-in Python libraries to demonstrate
+# that you can build effective agents without heavy external dependencies.
+
+# The following are built-in and don't need to be installed:
+# - http.server (HTTP server)
+# - json (JSON handling)
+# - logging (structured logging)
+# - urllib (URL parsing)
+
+# For production deployments, you might want to add:
+# - A more robust web framework (Flask, FastAPI, etc.)
+# - Request validation (Pydantic)
+# - Advanced logging (structlog)
+# - Monitoring and metrics (prometheus-client)
+
+# Optional: For enhanced functionality
+# requests>=2.28.0  # For making HTTP requests to external APIs
+# pydantic>=2.0.0   # For data validation

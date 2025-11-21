@@ -1,0 +1,13 @@
+# Tutorial requirements
+jupyter
+notebook
+ipykernel
+
+# HTTP client for testing
+requests>=2.28.0
+
+# JSON handling (built-in but explicit for clarity)
+# json (built-in)
+
+# For the agent application (installed separately in agent/ directory)
+# See agent/requirements.txt for agent-specific dependencies

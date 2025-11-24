@@ -3,7 +3,7 @@
 
 # AgentRun CLI (install from local directory)
 # Install with: pip install -e ../../
-
+kubernetes
 # For making HTTP requests to test the agent
 requests>=2.28.0
 

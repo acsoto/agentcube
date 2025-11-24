@@ -13,9 +13,13 @@ import json
 from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from langchain.agents import AgentType, initialize_agent, Tool
-from langchain.llms import OpenAI
+
+# Updated imports for modern LangChain
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_community.llms import OpenAI
 from langchain.memory import ConversationBufferMemory
+from langchain_core.tools import Tool
+from langchain import hub
 
 
 # Initialize FastAPI app
@@ -111,38 +115,31 @@ def create_agent(temperature: float = 0.7):
         # For testing without OpenAI, we'll use a mock response
         return None
 
-    llm = OpenAI(
-        temperature=temperature,
-        openai_api_key=api_key,
-        max_tokens=500
-    )
+    try:
+        llm = OpenAI(
+            temperature=temperature,
+            openai_api_key=api_key,
+            max_tokens=500
+        )
 
-    memory = ConversationBufferMemory(memory_key="chat_history")
+        # Get the react prompt from hub
+        prompt = hub.pull("hwchase17/react")
 
-    agent = initialize_agent(
-        tools=tools,
-        llm=llm,
-        agent=AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
-        verbose=True,
-        memory=memory
-    )
+        # Create the agent
+        agent = create_react_agent(llm, tools, prompt)
 
-    return agent
+        # Create agent executor
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            handle_parsing_errors=True
+        )
 
-
-@app.get("/")
-async def root():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "LangChain Test Agent",
-        "version": "1.0.0",
-        "endpoints": {
-            "/": "Health check",
-            "/invoke": "Invoke agent with a prompt",
-            "/tools": "List available tools"
-        }
-    }
+        return agent_executor
+    except Exception as e:
+        print(f"Error creating agent: {e}")
+        return None
 
 
 @app.get("/health")
@@ -165,7 +162,7 @@ async def list_tools():
     }
 
 
-@app.post("/invoke", response_model=AgentResponse)
+@app.post("/", response_model=AgentResponse)
 async def invoke_agent(request: AgentRequest):
     """
     Invoke the agent with a prompt.
@@ -200,11 +197,11 @@ async def invoke_agent(request: AgentRequest):
                 error=None
             )
 
-        # Run the agent
-        result = agent.run(request.prompt)
+        # Run the agent with invoke method (updated API)
+        result = agent.invoke({"input": request.prompt})
 
         return AgentResponse(
-            response=result,
+            response=result["output"],
             success=True,
             error=None
         )

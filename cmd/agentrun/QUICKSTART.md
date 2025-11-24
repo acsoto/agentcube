@@ -41,7 +41,7 @@ pip install -e .
    ```bash
    agentrun publish \
       -f examples/hello-agent \
-      --image-url "taoruiw/my-agent:v1.0.0" \
+      --image-url "docker.io/username/my-agent" \
       --verbose \
       --use-k8s
    ```
@@ -53,7 +53,7 @@ pip install -e .
 
 5. **Check status:**
    ```bash
-   agentrun status -f examples/hello-agent
+   agentrun status -f examples/hello-agent --use-k8s
    ```
 
 ## 📋 Command Reference

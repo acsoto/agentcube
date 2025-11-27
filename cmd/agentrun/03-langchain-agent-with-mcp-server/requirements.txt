@@ -1,0 +1,19 @@
+# Requirements for running the tutorial notebook
+
+# Jupyter notebook
+jupyter>=1.0.0
+ipykernel>=6.20.0
+
+# MCP client for testing
+mcp>=1.0.0
+
+# YAML for reading metadata
+pyyaml>=6.0
+
+# HTTP client for testing
+httpx>=0.25.0
+requests>=2.31.0
+
+# Note: Individual component dependencies are in their respective folders:
+# - mcp_server/requirements.txt - MCP server dependencies
+# - agent/requirements.txt - LangChain agent dependencies

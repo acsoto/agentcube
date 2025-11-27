@@ -48,7 +48,7 @@ except ImportError:
 # ============================================================================
 
 # MCP Server URL - can be configured via environment variable
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://localhost:8000/mcp")
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-utility-server.agentrun.svc.cluster.local:8000/mcp")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 USE_MOCK_MODE = not OPENAI_API_KEY
 

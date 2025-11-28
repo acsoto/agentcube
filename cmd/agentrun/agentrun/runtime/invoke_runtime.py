@@ -13,23 +13,34 @@ from typing import Any, Dict, Optional
 from agentrun.services.agentcube_service import AgentCubeService
 from agentrun.services.metadata_service import MetadataService
 from agentrun.services.k8s_provider import KubernetesProvider
+from agentrun.services.agentcube_provider import AgentCubeProvider # New import
 
 
 class InvokeRuntime:
     """Runtime for the invoke command."""
 
-    def __init__(self, verbose: bool = False, use_k8s: bool = False) -> None:
+    def __init__(self, verbose: bool = False, provider: str = "agentcube", agentcube_uri: Optional[str] = None) -> None:
         self.verbose = verbose
-        self.use_k8s = use_k8s
+        self.provider = provider
+        self.agentcube_uri = agentcube_uri
         self.metadata_service = MetadataService(verbose=verbose)
-        self.agentcube_service = AgentCubeService(verbose=verbose)
-        self.k8s_provider = None
+        
+        self.agentcube_service = AgentCubeService(verbose=verbose, api_url=agentcube_uri)
+        
+        # Providers for K8s deployments
+        self.agentcube_provider = None         # For agentcube provider (CRD)
+        self.standard_k8s_provider = None    # For standard-k8s provider (Deployment/Service)
 
-        if use_k8s:
+        if provider == "agentcube":
             try:
-                self.k8s_provider = KubernetesProvider(verbose=verbose)
+                self.agentcube_provider = AgentCubeProvider(verbose=verbose)
             except Exception as e:
-                logger.warning(f"Failed to initialize K8s provider: {e}")
+                logger.warning(f"Failed to initialize AgentCube provider for CRD: {e}")
+        elif provider == "standard-k8s":
+            try:
+                self.standard_k8s_provider = KubernetesProvider(verbose=verbose)
+            except Exception as e:
+                logger.warning(f"Failed to initialize standard K8s provider: {e}")
 
         if verbose:
             logging.basicConfig(level=logging.DEBUG)
@@ -86,12 +97,39 @@ class InvokeRuntime:
             )
 
         endpoint = metadata.agent_endpoint
+        
+        if self.agentcube_uri:
+            base_uri = self.agentcube_uri.rstrip('/')
+
+            if self.provider == "agentcube":
+                namespace = "agentrun"
+                if metadata.k8s_deployment and "namespace" in metadata.k8s_deployment:
+                    namespace = metadata.k8s_deployment["namespace"]
+                
+                endpoint = f"{base_uri}/v1/namespaces/{namespace}/agents/{metadata.agent_name}"
+            elif self.provider == "standard-k8s":
+                if metadata.k8s_deployment and "service_url" in metadata.k8s_deployment:
+                    from urllib.parse import urlparse, urlunparse
+                    original_service_url = metadata.k8s_deployment["service_url"]
+                    parsed_original = urlparse(original_service_url)
+                    parsed_base = urlparse(base_uri)
+                    endpoint = urlunparse(parsed_original._replace(scheme=parsed_base.scheme, netloc=parsed_base.netloc))
+                else:
+                    raise ValueError(
+                        "Standard K8s deployment info not found in metadata. "
+                        "Cannot construct endpoint with --agentcube-uri."
+                    )
+            else:
+                endpoint = base_uri
+        
         if not endpoint:
-            # Generate default endpoint if not available
-            endpoint = f"http://localhost:8080/v1/agents/{agent_id}/invoke"
+            raise ValueError(
+                "Agent endpoint is not available in metadata and could not be constructed. "
+                "Please publish with --agentcube-uri or provide it during invocation."
+            )
 
         if self.verbose:
-            logger.debug(f"Invocation prerequisites validated: agent_id={agent_id}")
+            logger.debug(f"Invocation prerequisites validated: agent_id={agent_id}, endpoint={endpoint}")
 
         return agent_id, endpoint
 

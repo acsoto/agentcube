@@ -35,13 +35,6 @@ from langchain_core.tools import Tool
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-# langchain-mcp-adapters for converting MCP tools to LangChain tools
-try:
-    from langchain_mcp_adapters import convert_mcp_to_langchain_tools
-except ImportError:
-    # Fallback if the adapter doesn't exist, we'll create a simple converter
-    convert_mcp_to_langchain_tools = None
-
 
 # ============================================================================
 # Configuration

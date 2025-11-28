@@ -184,7 +184,7 @@ class StatusRuntime:
             
             cr_object = self.agentcube_provider.get_agent_runtime(crd_name, cr_namespace)
             
-            agent_status = None
+            agent_status = "unknown"
             agent_endpoint = None
             k8s_deployment_details = {
                 "type": "AgentRuntime",

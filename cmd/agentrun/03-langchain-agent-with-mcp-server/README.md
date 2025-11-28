@@ -101,7 +101,7 @@ cd /path/to/agentcube/cmd/agentrun
 pip install -e .
 
 # Verify installation
-agentrun --version
+kubectl agentrun --version
 ```
 
 ### 2. Deploy MCP Server
@@ -110,17 +110,17 @@ agentrun --version
 cd 03-langchain-agent-with-mcp-server
 
 # Package MCP server
-agentrun pack -f mcp_server \
+kubectl agentrun pack -f mcp_server \
     --agent-name "mcp-utility-server" \
     --language "python" \
     --entrypoint "python main.py" \
     --port 8000
 
 # Build image
-agentrun build -f mcp_server
+kubectl agentrun build -f mcp_server
 
 # Deploy to Kubernetes
-agentrun publish -f mcp_server \
+kubectl agentrun publish -f mcp_server \
     --version "v1.0.0" \
     --image-url "mcp-utility-server:latest" \
     --use-k8s
@@ -130,17 +130,17 @@ agentrun publish -f mcp_server \
 
 ```bash
 # Package agent
-agentrun pack -f agent \
+kubectl agentrun pack -f agent \
     --agent-name "langchain-mcp-agent" \
     --language "python" \
     --entrypoint "python main.py" \
     --port 8080
 
 # Build image
-agentrun build -f agent
+kubectl agentrun build -f agent
 
 # Deploy to Kubernetes
-agentrun publish -f agent \
+kubectl agentrun publish -f agent \
     --version "v1.0.0" \
     --image-url "langchain-mcp-agent:latest" \
     --use-k8s
@@ -150,17 +150,17 @@ agentrun publish -f agent \
 
 ```bash
 # Test with calculator
-agentrun invoke -f agent \
+kubectl agentrun invoke -f agent \
     --payload '{"prompt": "Calculate 25 multiplied by 4"}' \
     --use-k8s
 
 # Test with datetime
-agentrun invoke -f agent \
+kubectl agentrun invoke -f agent \
     --payload '{"prompt": "What is the current time?"}' \
     --use-k8s
 
 # Test with file operations
-agentrun invoke -f agent \
+kubectl agentrun invoke -f agent \
     --payload '{"prompt": "Write Hello World to test.txt"}' \
     --use-k8s
 ```
@@ -281,13 +281,13 @@ kubectl get pods -n agentrun
 kubectl get services -n agentrun
 
 # Check MCP server status
-agentrun status -f mcp_server --use-k8s
+kubectl agentrun status -f mcp_server --use-k8s
 
 # Check agent status
-agentrun status -f agent --use-k8s
+kubectl agentrun status -f agent --use-k8s
 
 # Invoke agent
-agentrun invoke -f agent \
+kubectl agentrun invoke -f agent \
     --payload '{"prompt": "test"}' \
     --use-k8s
 ```
@@ -339,7 +339,7 @@ kubectl scale deployment langchain-mcp-agent --replicas=2 -n agentrun
 
 ### Deployment Fails
 
-**Problem**: `agentrun publish` fails
+**Problem**: `kubectl agentrun publish` fails
 
 **Solution**:
 1. Ensure Docker is running
@@ -386,8 +386,8 @@ To add new tools to the MCP server:
 2. Add your tool function with `@mcp.tool()` decorator
 3. Rebuild and redeploy:
    ```bash
-   agentrun build -f mcp_server
-   agentrun publish -f mcp_server --use-k8s
+   kubectl agentrun build -f mcp_server
+   kubectl agentrun publish -f mcp_server --use-k8s
    ```
 4. Restart agent to discover new tools:
    ```bash
@@ -456,7 +456,7 @@ If you encounter issues or have questions:
 
 1. Check the troubleshooting section above
 2. Review the detailed Jupyter notebook tutorial
-3. Check AgentRun CLI documentation: `agentrun --help`
+3. Check AgentRun CLI documentation: `kubectl agentrun --help`
 4. Open an issue on [GitHub](https://github.com/volcano-sh/agentcube/issues)
 
 ## License

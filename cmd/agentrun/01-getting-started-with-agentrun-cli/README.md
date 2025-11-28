@@ -161,7 +161,7 @@ The complete workflow consists of five main stages:
 └─────────────┘     └──────────┘     └─────────┘     └─────────┘     └────────┘
 ```
 
-### 1. Package with `agentrun pack`
+### 1. Package with `kubectl agentrun pack`
 
 Prepares your agent workspace:
 - Validates project structure
@@ -169,7 +169,7 @@ Prepares your agent workspace:
 - Generates `Dockerfile`
 
 ```bash
-agentrun pack -f agent \
+kubectl agentrun pack -f agent \
     --agent-name "langchain-agent" \
     --description "LangChain agent with Calculator and Weather tools" \
     --language "python" \
@@ -177,7 +177,7 @@ agentrun pack -f agent \
     --port 8080
 ```
 
-### 2. Build with `agentrun build`
+### 2. Build with `kubectl agentrun build`
 
 Creates a container image:
 - Builds Docker image
@@ -185,10 +185,10 @@ Creates a container image:
 - Updates metadata with build info
 
 ```bash
-agentrun build -f agent --verbose
+kubectl agentrun build -f agent --verbose
 ```
 
-### 3. Publish with `agentrun publish`
+### 3. Publish with `kubectl agentrun publish`
 
 Deploys to AgentCube:
 - Registers the agent
@@ -196,26 +196,26 @@ Deploys to AgentCube:
 - Creates deployment endpoint
 
 ```bash
-agentrun publish -f agent \
+kubectl agentrun publish -f agent \
     --version "v1.0.0" \
     --image-url "docker.io/myorg/langchain-agent"
 ```
 
-### 4. Invoke with `agentrun invoke`
+### 4. Invoke with `kubectl agentrun invoke`
 
 Tests the deployed agent:
 
 ```bash
-agentrun invoke -f agent \
+kubectl agentrun invoke -f agent \
     --payload '{"prompt": "What is the weather in Shanghai?"}'
 ```
 
-### 5. Check Status with `agentrun status`
+### 5. Check Status with `kubectl agentrun status`
 
 Monitors the agent:
 
 ```bash
-agentrun status -f agent
+kubectl agentrun status -f agent
 ```
 
 ## Best Practices
@@ -250,11 +250,11 @@ agentrun status -f agent
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `agentrun pack` | Package agent workspace | `agentrun pack -f ./agent --agent-name my-agent` |
-| `agentrun build` | Build container image | `agentrun build -f ./agent --verbose` |
-| `agentrun publish` | Publish to AgentCube | `agentrun publish -f ./agent --version v1.0.0` |
-| `agentrun invoke` | Test deployed agent | `agentrun invoke -f ./agent --payload '{"prompt": "test"}'` |
-| `agentrun status` | Check agent status | `agentrun status -f ./agent` |
+| `kubectl agentrun pack` | Package agent workspace | `kubectl agentrun pack -f ./agent --agent-name my-agent` |
+| `kubectl agentrun build` | Build container image | `kubectl agentrun build -f ./agent --verbose` |
+| `kubectl agentrun publish` | Publish to AgentCube | `kubectl agentrun publish -f ./agent --version v1.0.0` |
+| `kubectl agentrun invoke` | Test deployed agent | `kubectl agentrun invoke -f ./agent --payload '{"prompt": "test"}'` |
+| `kubectl agentrun status` | Check agent status | `kubectl agentrun status -f ./agent` |
 
 ## Troubleshooting
 
@@ -267,7 +267,7 @@ agentrun status -f agent
 ### Metadata Issues
 
 **Problem**: "Metadata file not found"
-- **Solution**: Run `agentrun pack` first to generate metadata
+- **Solution**: Run `kubectl agentrun pack` first to generate metadata
 - **Check**: You're in the correct workspace directory
 
 ### Port Conflicts
@@ -317,7 +317,7 @@ After completing this tutorial, you can:
 If you encounter issues:
 
 - Run commands with `--verbose` flag
-- Check `agentrun <command> --help`
+- Check `kubectl agentrun <command> --help`
 - Review the [troubleshooting guide](../QUICKSTART.md#troubleshooting)
 - Open an issue on [GitHub](https://github.com/volcano-sh/agentcube/issues)
 

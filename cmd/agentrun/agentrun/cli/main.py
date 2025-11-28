@@ -36,7 +36,7 @@ def version_callback(value: bool) -> None:
     """Show version information and exit."""
     if value:
         from agentrun import __version__
-        console.print(f"AgentRun CLI version: [bold green]{__version__}[/bold green]")
+        console.print(f"AgentRun CLI (kubectl agentrun) version: [bold green]{__version__}[/bold green]")
         raise typer.Exit()
 
 @app.callback()

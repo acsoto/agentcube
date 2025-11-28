@@ -232,7 +232,7 @@ type AgentEndpointSpec struct {
 	// +kubebuilder:validation:Required
 	Target string `json:"target" protobuf:"bytes,1,opt,name=target"`
 	// Version specifies the version of the agent runtime.
-    // +kubebuilder:validation:Required
+	// +kubebuilder:validation:Required
 	Version string `json:"version" protobuf:"bytes,2,opt,name=version"`
 }
 ```
@@ -391,7 +391,7 @@ With both `CodeInterpreterRuntime` and `CodeInterpreterEndpoint` published, user
  
 `CodeInterpreterEndpoint` is similar as `AgentEndpoint`, it provides a way to access a specific version of that runtime. If no `CodeInterpreterEndpoint` is specified, the system will default to using the `DefaultVersion` defined in the `CodeInterpreterRuntime` status. For example, users can publish a python code interpreter runtime for different versions like `3.10`, `3.11`, `3.12`, then create different `CodeInterpreterEndpoint` to bind to different versions.
 
-```go       
+```go
 // CodeInterpreterEndpoint defines the desired state of a code interpreter endpoint.
 // It is used to expose a specific code interpreter runtime version to agents.
 type CodeInterpreterEndpoint struct {
@@ -408,6 +408,7 @@ type CodeInterpreterEndpointSpec struct {
 	// +kubebuilder:validation:Required
 	Target string `json:"target" protobuf:"bytes,1,opt,name=target"`
 	// Version specifies the version of the code interpreter runtime.
+	// +kubebuilder:validation:Required
 	Version string `json:"version" protobuf:"bytes,2,opt,name=version"`
 }
 ```

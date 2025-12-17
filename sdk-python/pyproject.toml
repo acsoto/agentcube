@@ -6,8 +6,6 @@ readme = "README.md"
 
 dependencies = [
     "requests",
-    "PyJWT>=2.0.0",
-    "cryptography"
 ]
 
 [tool.setuptools.packages.find]

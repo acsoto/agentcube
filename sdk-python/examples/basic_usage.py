@@ -1,26 +1,27 @@
 from agentcube import CodeInterpreterClient
+import os
 
 def main():
     """
-    This example demonstrates the basic usage of the AgentCube Python SDK.
-    It requires a running AgentCube environment.
+    This example demonstrates the basic usage of the simplified AgentCube Python SDK.
+    It requires a running PicoD instance.
     
-    Ensure the following environment variables are set before running:
-    - WORKLOAD_MANAGER_URL: URL of the WorkloadManager service
-    - ROUTER_URL: URL of the Router service
-    - API_TOKEN: (Optional) Authentication token if required
+    Ensure the following environment variable is set before running:
+    - PICOD_URL: URL of the PicoD service (e.g., "http://localhost:8080")
     """
     
-    # specific configuration can be passed directly or via environment variables
-    # workload_manager_url = os.getenv("WORKLOAD_MANAGER_URL", "http://localhost:8080")
-    # router_url = os.getenv("ROUTER_URL", "http://localhost:8080")
+    picod_url = os.getenv("PICOD_URL")
+    if not picod_url:
+        print("Error: PICOD_URL environment variable is not set.")
+        print("Please set it to the URL of your PicoD instance (e.g., 'http://localhost:8080').")
+        return
 
-    print("Initializing AgentCube Client...")
+    print(f"Initializing AgentCube Client for PicoD at: {picod_url}...")
     
     try:
-        # Using context manager ensures the session is cleaned up (deleted) after use
-        with CodeInterpreterClient(verbose=True) as client:
-            print(f"Session created successfully! Session ID: {client.session_id}")
+        # Using context manager ensures the session is closed after use
+        with CodeInterpreterClient(picod_url=picod_url, verbose=True) as client:
+            print("Client initialized successfully!")
 
             # 1. Execute a simple Shell Command
             print("\n--- 1. Shell Command: whoami ---")

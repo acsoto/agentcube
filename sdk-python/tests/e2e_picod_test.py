@@ -16,10 +16,11 @@ logger = logging.getLogger("sdk_e2e_test")
 
 # --- Constants ---
 # Assuming picod docker image is available
-PICO_IMAGE_NAME = "light-picod:latest" # You might need to build this image if not available
+PICO_IMAGE_NAME = "light-picod:latest"
 CONTAINER_NAME = "picod_e2e_test_direct"
 HOST_PORT = 8080
-PICO_URL = f"http://localhost:{HOST_PORT}"
+# Using HTTPS now
+PICO_URL = f"https://localhost:{HOST_PORT}"
 
 # --- Helper Functions ---
 
@@ -34,7 +35,7 @@ def start_picod_container():
         "docker", "run", "-d",
         "--name", CONTAINER_NAME,
         "-p", f"{HOST_PORT}:8080",
-        PICO_IMAGE_NAME # Assuming the image is built with the new PicoD server logic
+        PICO_IMAGE_NAME
     ]
     
     logger.info(f"Running: {' '.join(cmd)}")
@@ -42,14 +43,16 @@ def start_picod_container():
     if result.returncode != 0:
         raise RuntimeError(f"Failed to start container: {result.stderr}")
         
-    # Wait for health check
+    # Wait for health check (verify=False for self-signed cert)
     url = f"{PICO_URL}/health"
     retries = 20 # Increased retries
     for i in range(retries):
         try:
-            resp = requests.get(url, timeout=1)
+            # We ignore SSL warnings here just for the health check
+            requests.packages.urllib3.disable_warnings()
+            resp = requests.get(url, timeout=1, verify=False)
             if resp.status_code == 200:
-                logger.info("PicoD is up and running!")
+                logger.info("PicoD is up and running (HTTPS)!")
                 return
         except (requests.ConnectionError, requests.Timeout) as e:
             logger.debug(f"Health check attempt {i+1} failed: {e}")
@@ -74,18 +77,20 @@ def main():
         start_picod_container()
         
         # 2. Initialize SDK Client
-        logger.info("Initializing CodeInterpreterClient for direct PicoD communication...")
+        logger.info("Initializing CodeInterpreterClient for direct PicoD communication (HTTPS)...")
+        # Note: verify_ssl=False because we are using a self-signed certificate in the test container
         client = CodeInterpreterClient(
             picod_url=PICO_URL,
-            verbose=True
+            verbose=True,
+            verify_ssl=False 
         )
         
         # 3. Run Tests
         with client: # Use context manager to ensure session closure
             logger.info(">>> TEST: Execute Command (echo)")
-            output = client.execute_command("echo 'Hello SDK'")
+            output = client.execute_command("echo 'Hello SDK HTTPS'")
             print(f"Output: {output.strip()}")
-            assert output.strip() == "Hello SDK"
+            assert output.strip() == "Hello SDK HTTPS"
 
             logger.info(">>> TEST: Execute Command with List Arguments")
             output_list_cmd = client.execute_command(["echo", "Hello from list args"])
@@ -99,7 +104,7 @@ def main():
             assert output.strip() == "30"
             
             logger.info(">>> TEST: File Upload & Download (write_file and download_file)")
-            test_content = "This is a test file for PicoD."
+            test_content = "This is a test file for PicoD over HTTPS."
             remote_filename = "test.txt"
             local_download_path = "local_test_artifacts/downloaded_test.txt"
             
@@ -179,7 +184,8 @@ def main():
                 f"{PICO_URL}/api/execute", 
                 headers=unauth_headers, 
                 json={"command": ["echo", "unauthorized"]},
-                timeout=5
+                timeout=5,
+                verify=False
             )
             assert resp_unauth.status_code == 401
             assert "Invalid token" in resp_unauth.json().get("error", "")

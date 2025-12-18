@@ -4,12 +4,16 @@ import logging
 import json
 import shlex
 import time
-from typing import Optional, Any, List, Union
+from typing import Optional, Any, List, Union, Dict
 
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 from agentcube.exceptions import CommandExecutionError
 from agentcube.utils.log import get_logger
+
+# Suppress InsecureRequestWarning for self-signed certificates
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # Hardcoded authentication token - must match PicoD's AuthToken
 AUTH_TOKEN = "agentcube-secret-token"
@@ -25,17 +29,20 @@ class CodeInterpreterClient:
     def __init__(
         self,
         picod_url: str,
-        verbose: bool = False
+        verbose: bool = False,
+        verify_ssl: bool = False
     ):
         """
         Initialize the Code Interpreter Client for direct PicoD communication.
         
         Args:
-            picod_url: The base URL of the PicoD instance (e.g., "http://localhost:8080").
+            picod_url: The base URL of the PicoD instance (e.g., "https://localhost:8080").
             verbose: Enable debug logging.
+            verify_ssl: Verify SSL certificate. Defaults to False for self-signed certificates.
         """
         self.picod_url = picod_url.rstrip('/') # Ensure no trailing slash
         self.verbose = verbose
+        self.verify_ssl = verify_ssl
         
         # Configure Logger
         level = logging.DEBUG if verbose else logging.INFO
@@ -45,8 +52,9 @@ class CodeInterpreterClient:
         self.session.headers.update({
             "Authorization": f"Bearer {AUTH_TOKEN}"
         })
+        self.session.verify = verify_ssl
 
-        self.logger.info(f"CodeInterpreterClient initialized for PicoD at {self.picod_url}")
+        self.logger.info(f"CodeInterpreterClient initialized for PicoD at {self.picod_url} (SSL Verify: {self.verify_ssl})")
 
     def __enter__(self):
         self.logger.debug("Entering CodeInterpreterClient context.")

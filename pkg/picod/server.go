@@ -1,8 +1,16 @@
 package picod
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"log"
+	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -13,9 +21,10 @@ import (
 
 // Config defines server configuration
 type Config struct {
-	Port int `json:"port"`
-	// BootstrapKey []byte `json:"bootstrap_key"` // Removed
-	Workspace string `json:"workspace"`
+	Port        int    `json:"port"`
+	Workspace   string `json:"workspace"`
+	TLSCertFile string `json:"tls_cert_file"`
+	TLSKeyFile  string `json:"tls_key_file"`
 }
 
 // Hardcoded authentication token
@@ -23,9 +32,8 @@ const AuthToken = "agentcube-secret-token" // This token is for direct SDK-PicoD
 
 // Server defines the PicoD HTTP server
 type Server struct {
-	engine *gin.Engine
-	config Config
-	// authManager  *AuthManager // Removed
+	engine       *gin.Engine
+	config       Config
 	startTime    time.Time
 	workspaceDir string
 }
@@ -33,9 +41,8 @@ type Server struct {
 // NewServer creates a new PicoD server instance
 func NewServer(config Config) *Server {
 	s := &Server{
-		config: config,
+		config:    config,
 		startTime: time.Now(),
-		// authManager: NewAuthManager(), // Removed
 	}
 
 	// Initialize workspace directory
@@ -59,20 +66,6 @@ func NewServer(config Config) *Server {
 	engine.Use(gin.Logger())   // Request logging
 	engine.Use(gin.Recovery()) // Crash recovery
 
-	// Removed: Bootstrap key loading
-	// if len(config.BootstrapKey) == 0 {
-	// 	log.Fatal("Bootstrap key is missing. Please ensure the bootstrap public key file is correctly mounted or provided.")
-	// }
-	// if err := s.authManager.LoadBootstrapKey(config.BootstrapKey); err != nil {
-	// 	log.Fatalf("Failed to load bootstrap key: %v", err)
-	// }
-	// log.Printf("Bootstrap key loaded successfully")
-
-	// Removed: Loading existing public key
-	// if err := s.authManager.LoadPublicKey(); err != nil {
-	// 	log.Printf("Server not initialized: %v", err)
-	// }
-
 	// API route group (Authenticated)
 	api := engine.Group("/api")
 	api.Use(s.AuthMiddleware()) // Use the new AuthMiddleware
@@ -83,9 +76,6 @@ func NewServer(config Config) *Server {
 		api.GET("/files/*path", s.DownloadFileHandler)
 	}
 
-	// Removed: Initialization endpoint
-	// engine.POST("/init", s.authManager.InitHandler)
-
 	// Health check (no authentication required)
 	engine.GET("/health", s.HealthCheckHandler)
 
@@ -93,10 +83,10 @@ func NewServer(config Config) *Server {
 	return s
 }
 
-// Run starts the server
+// Run starts the server with TLS
 func (s *Server) Run() error {
 	addr := fmt.Sprintf(":%d", s.config.Port)
-	log.Printf("PicoD server starting on %s", addr)
+	log.Printf("PicoD server starting on %s (HTTPS)", addr)
 
 	server := &http.Server{
 		Addr:              addr,
@@ -104,16 +94,95 @@ func (s *Server) Run() error {
 		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 
-	return server.ListenAndServe()
+	// Determine TLS configuration
+	if s.config.TLSCertFile != "" && s.config.TLSKeyFile != "" {
+		// Use provided certificate
+		log.Printf("Using provided TLS certificate: %s", s.config.TLSCertFile)
+		return server.ListenAndServeTLS(s.config.TLSCertFile, s.config.TLSKeyFile)
+	}
+
+	// Generate self-signed certificate
+	log.Printf("No TLS certificate provided. Generating self-signed certificate...")
+	tlsConfig, err := generateSelfSignedCert()
+	if err != nil {
+		return fmt.Errorf("failed to generate self-signed certificate: %v", err)
+	}
+	server.TLSConfig = tlsConfig
+
+	// ListenAndServeTLS with empty filenames uses the server.TLSConfig
+	// However, server.ListenAndServeTLS ignores TLSConfig.Certificates and tries to load files if filenames are provided.
+	// So we use server.Serve(listener) instead.
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+
+	tlsListener := tls.NewListener(ln, tlsConfig)
+	return server.Serve(tlsListener)
+}
+
+// generateSelfSignedCert generates a self-signed TLS certificate
+func generateSelfSignedCert() (*tls.Config, error) {
+	// Generate private key
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create template
+	notBefore := time.Now()
+	notAfter := notBefore.Add(365 * 24 * time.Hour) // Valid for 1 year
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"AgentCube PicoD"},
+		},
+		NotBefore: notBefore,
+		NotAfter:  notAfter,
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
+		DNSNames:              []string{"localhost"},
+	}
+
+	// Create certificate
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, err
+	}
+
+	// Encode to PEM
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+
+	// Load X509 key pair
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+	}, nil
 }
 
 // HealthCheckHandler handles health check requests
 func (s *Server) HealthCheckHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"status": "ok",
+		"status":  "ok",
 		"service": "PicoD",
 		"version": "0.0.1",
-		"uptime": time.Since(s.startTime).String(),
+		"uptime":  time.Since(s.startTime).String(),
 	})
 }
 
@@ -153,11 +222,6 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
-		// Enforce maximum body size to prevent memory exhaustion (if needed, this was from original auth.go)
-		// Assuming MaxBodySize constant is defined elsewhere or will be moved/removed as well
-		// For now, removing this as it was tied to the old AuthManager
-		// c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxBodySize)
 
 		c.Next()
 	}

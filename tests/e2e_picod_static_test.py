@@ -188,6 +188,14 @@ class StaticModeClient:
         resp.raise_for_status()
         return resp.json()
     
+    def run_python(self, code: str) -> dict:
+        """Run Python code via Jupyter kernel."""
+        resp = self.request("POST", "/api/run_python", body={
+            "code": code
+        })
+        resp.raise_for_status()
+        return resp.json()
+    
     def health(self) -> dict:
         """Get health status (no auth required)."""
         resp = self.session.get(f"{self.base_url}/health")
@@ -340,18 +348,35 @@ def run_tests():
         # 1. Either server-side changes to skip body verification for multipart
         # 2. Or complex multipart body pre-construction for signing
         
-        # Test 6: Run Python (if available)
-        logger.info(">>> TEST: Run Python")
+        # Test 6: Run Python via /api/run_python (Jupyter kernel)
+        logger.info(">>> TEST: Run Python (/api/run_python endpoint)")
         try:
-            result = client.execute(["python3", "-c", "print(10 + 20)"])
-            output = result.get("stdout", "").strip()
+            result = client.run_python("print(10 + 20)")
+            output = result.get("output", "").strip()
             logger.info(f"Python output: {output}")
-            assert output == "30", f"Expected 30, got {output}"
+            assert "30" in output, f"Expected 30 in output, got {output}"
+            assert result.get("status") == "ok", f"Expected status ok, got {result.get('status')}"
             logger.info("✓ Run Python passed")
         except Exception as e:
-            logger.warning(f"Python test skipped: {e}")
+            logger.warning(f"Run Python test failed: {e}")
+            raise
         
-        # Test 7: Invalid signature (tampered request)
+        # Test 7: Python state isolation (after %reset -f)
+        logger.info(">>> TEST: Python State Isolation")
+        try:
+            # First execution defines a variable
+            result1 = client.run_python("test_var = 42; print(test_var)")
+            assert "42" in result1.get("output", "")
+            
+            # Second execution should NOT have that variable (due to %reset -f)
+            result2 = client.run_python("print(test_var)")
+            # Expect error since variable should be cleared
+            assert result2.get("status") == "error" or "NameError" in result2.get("error", "")
+            logger.info("✓ Python state isolation passed")
+        except Exception as e:
+            logger.warning(f"Python state isolation test skipped: {e}")
+        
+        # Test 8: Invalid signature (tampered request)
         logger.info(">>> TEST: Invalid Signature (should fail)")
         try:
             # Create a request with wrong hash

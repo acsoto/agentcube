@@ -97,15 +97,17 @@ func NewServer(config Config) *Server {
 	engine.Use(gin.Logger())   // Request logging
 	engine.Use(gin.Recovery()) // Crash recovery
 
-	// Load bootstrap key (Required)
-	if len(config.BootstrapKey) == 0 {
-		klog.Fatal("Bootstrap key is missing. Please ensure the bootstrap public key file is correctly mounted or provided.")
+	// Load bootstrap key (required for dynamic mode, optional for static mode)
+	if len(config.BootstrapKey) > 0 {
+		if err := s.authManager.LoadBootstrapKey(config.BootstrapKey); err != nil {
+			klog.Fatalf("Failed to load bootstrap key: %v", err)
+		}
+		klog.Info("Bootstrap key loaded successfully")
+	} else if config.AuthMode == AuthModeDynamic {
+		klog.Fatal("Bootstrap key is required for dynamic mode")
+	} else {
+		klog.Info("Bootstrap key not provided (optional in static mode)")
 	}
-
-	if err := s.authManager.LoadBootstrapKey(config.BootstrapKey); err != nil {
-		klog.Fatalf("Failed to load bootstrap key: %v", err)
-	}
-	klog.Info("Bootstrap key loaded successfully")
 
 	// Static Key Mode initialization
 	if config.AuthMode == AuthModeStatic {

@@ -24,12 +24,16 @@ func main() {
 		authMode = "dynamic"
 	}
 
-	// Read bootstrap key from file
+	// Read bootstrap key from file (required for dynamic mode, optional for static mode)
 	var bootstrapKey []byte
 	if data, err := os.ReadFile(*bootstrapKeyFile); err == nil {
 		bootstrapKey = data
-	} else {
+	} else if authMode == picod.AuthModeDynamic {
+		// Bootstrap key is required for dynamic mode
 		klog.Fatalf("Failed to read bootstrap key from %s: %v", *bootstrapKeyFile, err)
+	} else {
+		// In static mode, bootstrap key is optional
+		klog.Infof("Bootstrap key not found at %s (optional in static mode)", *bootstrapKeyFile)
 	}
 
 	config := picod.Config{

@@ -34,7 +34,6 @@ logger = logging.getLogger("picod_static_e2e")
 IMAGE_NAME = "picod-test:latest"
 CONTAINER_NAME = "picod_static_e2e_test"
 HOST_PORT = 8081  # Different from SDK test to avoid conflict
-BOOTSTRAP_KEY_FILE = os.path.abspath("bootstrap_public.pem")
 
 # --- Key Generation ---
 
@@ -238,25 +237,20 @@ def stop_container():
     subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
 
 
-def start_container(public_key_b64: str, public_key_pem: bytes):
+def start_container(public_key_b64: str):
     """Start PicoD container in static mode."""
     logger.info(f"Starting Docker container {CONTAINER_NAME} in static mode...")
     
     stop_container()
     
-    # Write bootstrap key (use the same public key for bootstrap)
-    with open(BOOTSTRAP_KEY_FILE, "wb") as f:
-        f.write(public_key_pem)
-    
+    # Static mode only needs PICOD_PUBLIC_KEY env var, no bootstrap key required
     cmd = [
         "docker", "run", "-d",
         "--name", CONTAINER_NAME,
         "-p", f"{HOST_PORT}:8080",
         "-e", "PICOD_AUTH_MODE=static",
         "-e", f"PICOD_PUBLIC_KEY={public_key_b64}",
-        "-v", f"{BOOTSTRAP_KEY_FILE}:/etc/picod/public-key.pem",
         IMAGE_NAME,
-        "-bootstrap-key", "/etc/picod/public-key.pem"
     ]
     
     logger.info(f"Running: {' '.join(cmd)}")
@@ -305,7 +299,7 @@ def run_tests():
     
     try:
         # Start container
-        start_container(public_key_b64, pub_pem)
+        start_container(public_key_b64)
         
         # Create client
         client = StaticModeClient(f"http://localhost:{HOST_PORT}", private_key)
@@ -424,10 +418,6 @@ def run_tests():
     finally:
         logger.info(f"Stopping container {CONTAINER_NAME}...")
         stop_container()
-        
-        # Cleanup
-        if os.path.exists(BOOTSTRAP_KEY_FILE):
-            os.remove(BOOTSTRAP_KEY_FILE)
 
 
 if __name__ == "__main__":

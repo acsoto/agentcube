@@ -350,13 +350,23 @@ def run_tests():
         
         # Test 6: Run Python via /api/run_python (Jupyter kernel)
         logger.info(">>> TEST: Run Python (/api/run_python endpoint)")
+        time.sleep(2)
         try:
+            import time as time_module
+            start_time = time_module.time()
             result = client.run_python("print(10 + 20)")
+            client_elapsed = (time_module.time() - start_time) * 1000  # ms
+            
             output = result.get("output", "").strip()
+            server_duration = result.get("duration", 0) * 1000  # ms
+            
             logger.info(f"Python output: {output}")
+            logger.info(f"执行耗时: {client_elapsed:.1f}ms (服务端: {server_duration:.1f}ms)")
+            
             assert "30" in output, f"Expected 30 in output, got {output}"
             assert result.get("status") == "ok", f"Expected status ok, got {result.get('status')}"
             logger.info("✓ Run Python passed")
+            
         except Exception as e:
             logger.warning(f"Run Python test failed: {e}")
             raise

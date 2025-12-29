@@ -413,6 +413,58 @@ func (am *AuthManager) AuthMiddleware() gin.HandlerFunc {
 			// Build canonical request and verify
 			actualHash := buildCanonicalRequestHash(c.Request, bodyBytes)
 			if claimedHash != actualHash {
+				// Detailed debug logging for troubleshooting
+				uri := c.Request.URL.Path
+				if uri == "" {
+					uri = "/"
+				}
+				queryString := buildCanonicalQueryString(c.Request)
+				canonicalHeaders, signedHeaders := buildCanonicalHeaders(c.Request)
+				bodySha256 := fmt.Sprintf("%x", sha256.Sum256(bodyBytes))
+
+				// Build the actual canonical request string for display
+				canonicalRequest := strings.Join([]string{
+					c.Request.Method,
+					uri,
+					queryString,
+					canonicalHeaders,
+					signedHeaders,
+					bodySha256,
+				}, "\n")
+
+				klog.Warningf(`[AUTH DEBUG] canonical_request_sha256 MISMATCH
+================================================================================
+CLAIMED HASH (from JWT): %s
+ACTUAL HASH (computed):  %s
+================================================================================
+CANONICAL REQUEST COMPONENTS:
+  1. Method:          %s
+  2. URI:             %s
+  3. QueryString:     %s
+  4. CanonicalHeaders: %q
+  5. SignedHeaders:   %s
+  6. BodySHA256:      %s
+================================================================================
+RAW CANONICAL REQUEST (what we hash):
+%s
+================================================================================
+REQUEST DETAILS:
+  Full URL:     %s
+  Content-Type: %s
+  Body Length:  %d bytes
+  Body Preview: %q
+================================================================================`,
+					claimedHash, actualHash,
+					c.Request.Method, uri, queryString, canonicalHeaders, signedHeaders, bodySha256,
+					canonicalRequest,
+					c.Request.URL.String(), c.Request.Header.Get("Content-Type"), len(bodyBytes),
+					func() string {
+						if len(bodyBytes) > 500 {
+							return string(bodyBytes[:500]) + "..."
+						}
+						return string(bodyBytes)
+					}())
+
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"error":  "Request integrity check failed",
 					"code":   http.StatusUnauthorized,

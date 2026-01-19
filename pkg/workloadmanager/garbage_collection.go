@@ -38,13 +38,15 @@ type garbageCollector struct {
 	k8sClient   *K8sClient
 	interval    time.Duration
 	storeClient store.Store
+	batchSize   int64
 }
 
-func newGarbageCollector(k8sClient *K8sClient, storeClient store.Store, interval time.Duration) *garbageCollector {
+func newGarbageCollector(k8sClient *K8sClient, storeClient store.Store, interval time.Duration, batchSize int64) *garbageCollector {
 	return &garbageCollector{
 		k8sClient:   k8sClient,
 		interval:    interval,
 		storeClient: storeClient,
+		batchSize:   batchSize,
 	}
 }
 
@@ -67,12 +69,12 @@ func (gc *garbageCollector) once() {
 	ctx, cancel := context.WithTimeout(context.Background(), gcOnceTimeout)
 	defer cancel()
 	inactiveTime := time.Now().Add(-DefaultSandboxIdleTimeout)
-	inactiveSandboxes, err := gc.storeClient.ListInactiveSandboxes(ctx, inactiveTime, 16)
+	inactiveSandboxes, err := gc.storeClient.ListInactiveSandboxes(ctx, inactiveTime, gc.batchSize)
 	if err != nil {
 		klog.Errorf("garbage collector error listing inactive sandboxes: %v", err)
 	}
 	// List sandboxes reach DDL
-	expiredSandboxes, err := gc.storeClient.ListExpiredSandboxes(ctx, time.Now(), 16)
+	expiredSandboxes, err := gc.storeClient.ListExpiredSandboxes(ctx, time.Now(), gc.batchSize)
 	if err != nil {
 		klog.Errorf("garbage collector error listing expired sandboxes: %v", err)
 	}

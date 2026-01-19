@@ -278,9 +278,34 @@ func (rs *redisStore) UpdateSessionLastActivity(ctx context.Context, sessionID s
 		at = time.Now()
 	}
 
-	// Ensure the sandbox mapping exists; otherwise treat as not found.
+	// Optimistically try to update the score if the member exists.
+	// XX: Only update elements that already exist.
+	// Ch: Modify the return value to the total number of elements changed (updated).
+	n, err := rs.cli.ZAddArgs(ctx, rs.lastActivityIndexKey, redisv9.ZAddArgs{
+		XX: true,
+		Ch: true,
+		Members: []redisv9.Z{
+			{
+				Score:  float64(at.Unix()),
+				Member: sessionID,
+			},
+		},
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("UpdateSessionLastActivity: ZAddArgs: %w", err)
+	}
+
+	// If n > 0, it means the element was found and updated (score changed).
+	if n > 0 {
+		return nil
+	}
+
+	// If n == 0, it means either:
+	// 1. The element does not exist.
+	// 2. The element exists but the score (time) is exactly the same.
+	// We need to verify existence.
 	sessionKey := rs.sessionKey(sessionID)
-	_, err := rs.cli.Get(ctx, sessionKey).Result()
+	_, err = rs.cli.Get(ctx, sessionKey).Result()
 	if errors.Is(err, redisv9.Nil) {
 		return ErrNotFound
 	}
@@ -288,11 +313,13 @@ func (rs *redisStore) UpdateSessionLastActivity(ctx context.Context, sessionID s
 		return fmt.Errorf("UpdateSessionLastActivity: get mapping for sessionID %s: %w", sessionID, err)
 	}
 
+	// If Get succeeded, the session exists.
+	// We must ensure it is in the ZSet (handling case where it was missing or same score).
 	if _, err := rs.cli.ZAdd(ctx, rs.lastActivityIndexKey, redisv9.Z{
 		Score:  float64(at.Unix()),
 		Member: sessionID,
 	}).Result(); err != nil {
-		return fmt.Errorf("UpdateSessionLastActivity: ZAdd: %w", err)
+		return fmt.Errorf("UpdateSessionLastActivity: ZAdd fallback: %w", err)
 	}
 
 	return nil

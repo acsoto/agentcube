@@ -19,7 +19,6 @@ package workloadmanager
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -333,8 +332,8 @@ func (r *CodeInterpreterReconciler) convertToPodTemplate(template *runtimev1alph
 
 // podTemplateEqual checks if two PodTemplates are equal
 func (r *CodeInterpreterReconciler) podTemplateEqual(a, b sandboxv1alpha1.PodTemplate) bool {
-	// Use reflect.DeepEqual for a comprehensive comparison.
-	return reflect.DeepEqual(a.Spec, b.Spec)
+	// Use generated PodSpecEqual for a performant comparison.
+	return PodSpecEqual(a.Spec, b.Spec)
 }
 
 // GetCodeInterpreter retrieves a CodeInterpreter from the cache by namespace and name.

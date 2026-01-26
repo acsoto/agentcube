@@ -53,6 +53,8 @@ type Config struct {
 	TLSKey string
 	// EnableAuth enable auth by service account
 	EnableAuth bool
+	// GarbageCollectionBatchSize is the batch size for garbage collection
+	GarbageCollectionBatchSize int
 }
 
 // NewServer creates a new API server instance
@@ -146,7 +148,11 @@ func (s *Server) Start(ctx context.Context) error {
 
 	klog.Infof("Server listening on %s", addr)
 
-	gc := newGarbageCollector(s.k8sClient, s.storeClient, 15*time.Second)
+	batchSize := int64(s.config.GarbageCollectionBatchSize)
+	if batchSize <= 0 {
+		batchSize = 16
+	}
+	gc := newGarbageCollector(s.k8sClient, s.storeClient, 15*time.Second, batchSize)
 	go gc.run(ctx.Done())
 
 	// Start HTTP or HTTPS server

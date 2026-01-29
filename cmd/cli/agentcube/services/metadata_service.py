@@ -20,6 +20,7 @@ agent metadata from the agent_metadata.yaml file.
 """
 
 import logging
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -254,4 +255,22 @@ class MetadataService:
         if not pom_file.exists():
             raise ValueError("Maven pom.xml file not found for Java project")
 
-        # TODO: Add more Java-specific validation
+        # Validate pom.xml content
+        try:
+            tree = ET.parse(pom_file)
+            root = tree.getroot()
+            # Handle potential namespace in tag name (e.g. {http://maven.apache.org/POM/4.0.0}project)
+            if not root.tag.endswith('project'):
+                raise ValueError(f"Invalid root element in pom.xml: {root.tag}. Expected 'project'")
+        except ET.ParseError as e:
+            raise ValueError(f"Invalid XML in pom.xml: {e}")
+        except Exception as e:
+            raise ValueError(f"Error parsing pom.xml: {e}")
+
+        # Check for standard source directory
+        src_main_java = workspace_path / "src" / "main" / "java"
+        if not src_main_java.exists():
+            raise ValueError("Java source directory not found. Expected 'src/main/java'")
+
+        if not src_main_java.is_dir():
+            raise ValueError(f"Path is not a directory: {src_main_java}")

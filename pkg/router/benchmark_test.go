@@ -32,11 +32,11 @@ type mockStore struct {
 	updateLatency time.Duration
 }
 
-func (m *mockStore) Ping(ctx context.Context) error { return nil }
-func (m *mockStore) GetSandboxBySessionID(ctx context.Context, sessionID string) (*types.SandboxInfo, error) {
+func (m *mockStore) Ping(_ context.Context) error { return nil }
+func (m *mockStore) GetSandboxBySessionID(_ context.Context, sessionID string) (*types.SandboxInfo, error) {
 	return nil, nil
 }
-func (m *mockStore) StoreSandbox(ctx context.Context, sandboxStore *types.SandboxInfo) error {
+func (m *mockStore) StoreSandbox(_ context.Context, sandboxStore *types.SandboxInfo) error {
 	return nil
 }
 func (m *mockStore) UpdateSandbox(ctx context.Context, sandboxStore *types.SandboxInfo) error {
@@ -70,7 +70,7 @@ func BenchmarkHandleInvoke(b *testing.B) {
 	gin.SetMode(gin.ReleaseMode)
 
 	// 1. Setup Mock Sandbox Target
-	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	targetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer targetSrv.Close()

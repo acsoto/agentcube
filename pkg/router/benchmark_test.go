@@ -33,23 +33,23 @@ type mockStore struct {
 }
 
 func (m *mockStore) Ping(_ context.Context) error { return nil }
-func (m *mockStore) GetSandboxBySessionID(_ context.Context, sessionID string) (*types.SandboxInfo, error) {
+func (m *mockStore) GetSandboxBySessionID(_ context.Context, _ string) (*types.SandboxInfo, error) {
 	return nil, nil
 }
-func (m *mockStore) StoreSandbox(_ context.Context, sandboxStore *types.SandboxInfo) error {
+func (m *mockStore) StoreSandbox(_ context.Context, _ *types.SandboxInfo) error {
 	return nil
 }
-func (m *mockStore) UpdateSandbox(ctx context.Context, sandboxStore *types.SandboxInfo) error {
+func (m *mockStore) UpdateSandbox(_ context.Context, _ *types.SandboxInfo) error {
 	return nil
 }
-func (m *mockStore) DeleteSandboxBySessionID(ctx context.Context, sessionID string) error { return nil }
-func (m *mockStore) ListExpiredSandboxes(ctx context.Context, before time.Time, limit int64) ([]*types.SandboxInfo, error) {
+func (m *mockStore) DeleteSandboxBySessionID(_ context.Context, _ string) error { return nil }
+func (m *mockStore) ListExpiredSandboxes(_ context.Context, _ time.Time, _ int64) ([]*types.SandboxInfo, error) {
 	return nil, nil
 }
-func (m *mockStore) ListInactiveSandboxes(ctx context.Context, before time.Time, limit int64) ([]*types.SandboxInfo, error) {
+func (m *mockStore) ListInactiveSandboxes(_ context.Context, _ time.Time, _ int64) ([]*types.SandboxInfo, error) {
 	return nil, nil
 }
-func (m *mockStore) UpdateSessionLastActivity(ctx context.Context, sessionID string, at time.Time) error {
+func (m *mockStore) UpdateSessionLastActivity(_ context.Context, _ string, _ time.Time) error {
 	if m.updateLatency > 0 {
 		time.Sleep(m.updateLatency)
 	}

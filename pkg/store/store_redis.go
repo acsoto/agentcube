@@ -37,6 +37,14 @@ type redisStore struct {
 	lastActivityIndexKey string
 }
 
+var updateSessionLastActivityScript = redisv9.NewScript(`
+	if redis.call("EXISTS", KEYS[1]) == 1 then
+		return redis.call("ZADD", KEYS[2], ARGV[1], ARGV[2])
+	else
+		return -1
+	end
+`)
+
 // initRedisStore init redis store client
 func initRedisStore() (*redisStore, error) {
 	redisOptions, err := makeRedisOptions()
@@ -278,21 +286,17 @@ func (rs *redisStore) UpdateSessionLastActivity(ctx context.Context, sessionID s
 		at = time.Now()
 	}
 
-	// Ensure the sandbox mapping exists; otherwise treat as not found.
 	sessionKey := rs.sessionKey(sessionID)
-	_, err := rs.cli.Get(ctx, sessionKey).Result()
-	if errors.Is(err, redisv9.Nil) {
-		return ErrNotFound
-	}
+	keys := []string{sessionKey, rs.lastActivityIndexKey}
+	argv := []interface{}{float64(at.Unix()), sessionID}
+
+	res, err := updateSessionLastActivityScript.Run(ctx, rs.cli, keys, argv...).Result()
 	if err != nil {
-		return fmt.Errorf("UpdateSessionLastActivity: get mapping for sessionID %s: %w", sessionID, err)
+		return fmt.Errorf("UpdateSessionLastActivity: script run: %w", err)
 	}
 
-	if _, err := rs.cli.ZAdd(ctx, rs.lastActivityIndexKey, redisv9.Z{
-		Score:  float64(at.Unix()),
-		Member: sessionID,
-	}).Result(); err != nil {
-		return fmt.Errorf("UpdateSessionLastActivity: ZAdd: %w", err)
+	if val, ok := res.(int64); ok && val == -1 {
+		return ErrNotFound
 	}
 
 	return nil

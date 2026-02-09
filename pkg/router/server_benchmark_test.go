@@ -57,7 +57,7 @@ func BenchmarkTransportConcurrency(b *testing.B) {
 	}
 
 	// 4. Create a dummy backend server
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// simulate minimal work
 		w.WriteHeader(http.StatusOK)
 	}))

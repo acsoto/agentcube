@@ -67,8 +67,10 @@ func NewServer(config *Config) (*Server, error) {
 
 	// Create a reusable HTTP transport for connection pooling
 	httpTransport := &http.Transport{
-		IdleConnTimeout:    0,
-		DisableCompression: false,
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     0,
+		DisableCompression:  false,
 	}
 
 	server := &Server{
@@ -153,7 +155,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create HTTP/2 server for better performance
 	h2s := &http2.Server{}
-	
+
 	// Wrap handler with h2c for HTTP/2 cleartext support
 	h2cHandler := h2c.NewHandler(s.engine, h2s)
 

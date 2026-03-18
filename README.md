@@ -1,7 +1,7 @@
 # AgentCube
 
 > [!NOTE]
-> AgentCube is currently in the Proposal and Early Design Phase. Project's initial proposal can be found at <https://github.com/volcano-sh/volcano/issues/4686>. Specific feature sets and implementation details are subject to change based on community consensus and development progress.
+> AgentCube is currently in the Proposal and Early Design Phase. The initial proposal can be found at <https://github.com/volcano-sh/volcano/issues/4686>. Specific feature sets and implementation details are subject to change based on community consensus and development progress.
 
 ## Overview
 
@@ -14,11 +14,11 @@ AgentCube aims to provide a specialized control plane and data plane components 
 1. **Extreme Low-Latency Scheduling**: Optimized for fast startup and interactive response.
 2. **Stateful Lifecycle Management**: Implementing smart sleep/resume mechanisms for resource efficiency.
 3. **High-Density Resource Utilization**: Advanced bin-packing under the constraint of guaranteed performance isolation.
-4. **Command-style API**: Providing a synchronous, imperative API experience for Agent execution.
+4. **Command-style API**: Providing a synchronous, imperative interface for agent execution.
 
 ## Why AgentCube
 
-Volcano, designed for high-performance batch scheduling in the cloud-native ecosystem, is ideal for managing complex, compute-intensive workloads. While AI Agent applications represent the next generation of AI workloads, characterized by unique demands:
+Volcano, designed for high-performance batch scheduling in the cloud-native ecosystem, is ideal for managing complex, compute-intensive workloads. AI agent applications represent the next generation of AI workloads and come with several unique demands:
 
 * **Intermittent Activity**: Requiring fast resource release when idle and rapid recovery upon interaction.
 * **High Latency Sensitivity**: Demanding sub-second responses for optimal user experience.

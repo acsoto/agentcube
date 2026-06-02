@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	cubeinformers "github.com/volcano-sh/agentcube/client-go/informers/externalversions"
+	cubelisters "github.com/volcano-sh/agentcube/client-go/listers/runtime/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
@@ -50,24 +52,33 @@ var (
 )
 
 type Informers struct {
+	AgentRuntimeLister      cubelisters.AgentRuntimeLister
+	CodeInterpreterLister   cubelisters.CodeInterpreterLister
 	AgentRuntimeInformer    cache.SharedIndexInformer
 	CodeInterpreterInformer cache.SharedIndexInformer
 	PodInformer             cache.SharedIndexInformer
 	informerFactory         informers.SharedInformerFactory
+	cubeInformerFactory     cubeinformers.SharedInformerFactory
 }
 
 func NewInformers(k8sClient *K8sClient) *Informers {
+	agentRuntimeInformer := k8sClient.cubeInformerFactory.Runtime().V1alpha1().AgentRuntimes()
+	codeInterpreterInformer := k8sClient.cubeInformerFactory.Runtime().V1alpha1().CodeInterpreters()
+
 	return &Informers{
-		AgentRuntimeInformer:    k8sClient.dynamicInformer.ForResource(AgentRuntimeGVR).Informer(),
-		CodeInterpreterInformer: k8sClient.dynamicInformer.ForResource(CodeInterpreterGVR).Informer(),
+		AgentRuntimeLister:      agentRuntimeInformer.Lister(),
+		CodeInterpreterLister:   codeInterpreterInformer.Lister(),
+		AgentRuntimeInformer:    agentRuntimeInformer.Informer(),
+		CodeInterpreterInformer: codeInterpreterInformer.Informer(),
 		PodInformer:             k8sClient.podInformer,
 		informerFactory:         k8sClient.informerFactory,
+		cubeInformerFactory:     k8sClient.cubeInformerFactory,
 	}
 }
 
 func (ifm *Informers) RunAndWaitForCacheSync(ctx context.Context) error {
 	ifm.run(ctx.Done())
-	ctxTimeout, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	ctxTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 	if err := ifm.waitForCacheSync(ctxTimeout); err != nil {
 		return fmt.Errorf("failed to wait for caches to sync: %w", err)
@@ -77,18 +88,26 @@ func (ifm *Informers) RunAndWaitForCacheSync(ctx context.Context) error {
 
 func (ifm *Informers) run(stopCh <-chan struct{}) {
 	ifm.informerFactory.Start(stopCh)
-	go ifm.AgentRuntimeInformer.Run(stopCh)
-	go ifm.CodeInterpreterInformer.Run(stopCh)
+	ifm.cubeInformerFactory.Start(stopCh)
 }
 
 func (ifm *Informers) waitForCacheSync(ctx context.Context) error {
 	if !cache.WaitForCacheSync(ctx.Done(), ifm.AgentRuntimeInformer.HasSynced) {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("timed out waiting for %v caches to sync: %w", AgentRuntimeGVR, err)
+		}
 		return fmt.Errorf("timed out waiting for %v caches to sync", AgentRuntimeGVR)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), ifm.CodeInterpreterInformer.HasSynced) {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("timed out waiting for %v caches to sync: %w", CodeInterpreterGVR, err)
+		}
 		return fmt.Errorf("timed out waiting for %v caches to sync", CodeInterpreterGVR)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), ifm.PodInformer.HasSynced) {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("timed out waiting for pod informer cache to sync: %w", err)
+		}
 		return fmt.Errorf("timed out waiting for pod informer cache to sync")
 	}
 	return nil

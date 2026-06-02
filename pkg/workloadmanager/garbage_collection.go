@@ -31,7 +31,18 @@ import (
 )
 
 const (
+	// gcOnceTimeout caps the wall-clock time a single GC run is allowed to take.
+	// Unrelated to gcMinInactiveLookback — the 2m vs 1m coincidence is not meaningful.
 	gcOnceTimeout = 2 * time.Minute
+	// gcMinInactiveLookback is the minimum time a sandbox must have been idle before
+	// it is included in the GC's inactive candidate query. Sandboxes with an IdleTimeout
+	// shorter than this window are not caught by this check; those rely on the
+	// idle-timeout annotation enforced by the agent-sandbox controller.
+	gcMinInactiveLookback = 1 * time.Minute
+	// gcCandidateLimit is the number of inactive candidates fetched per GC cycle.
+	// A larger value reduces the chance that sandboxes with long IdleTimeout values
+	// at the front of the sorted set starve out eligible sandboxes behind them.
+	gcCandidateLimit = 100
 )
 
 type garbageCollector struct {
@@ -63,22 +74,44 @@ func (gc *garbageCollector) run(stopCh <-chan struct{}) {
 }
 
 func (gc *garbageCollector) once() {
-	// List sandboxes idle timeout
 	ctx, cancel := context.WithTimeout(context.Background(), gcOnceTimeout)
 	defer cancel()
-	inactiveTime := time.Now().Add(-DefaultSandboxIdleTimeout)
-	inactiveSandboxes, err := gc.storeClient.ListInactiveSandboxes(ctx, inactiveTime, 16)
+	now := time.Now()
+
+	// Query sandboxes inactive for at least gcMinInactiveLookback. This avoids scanning
+	// recently-active sandboxes while still catching timeouts shorter than
+	// DefaultSandboxIdleTimeout. The per-sandbox filter below makes the final decision.
+	candidates, err := gc.storeClient.ListInactiveSandboxes(ctx, now.Add(-gcMinInactiveLookback), gcCandidateLimit)
 	if err != nil {
 		klog.Errorf("garbage collector error listing inactive sandboxes: %v", err)
 	}
-	// List sandboxes reach DDL
-	expiredSandboxes, err := gc.storeClient.ListExpiredSandboxes(ctx, time.Now(), 16)
+
+	// Apply per-sandbox idle timeout: only include sandboxes whose own IdleTimeout
+	// (stored in the session JSON) has actually elapsed since LastActivityAt.
+	inactiveSandboxes := make([]*types.SandboxInfo, 0, len(candidates))
+	for _, s := range candidates {
+		activityAt := s.LastActivityAt
+		if activityAt.IsZero() {
+			klog.Warningf("garbage collector: no last-activity for sandbox %s/%s (session %s), falling back to CreatedAt", s.SandboxNamespace, s.Name, s.SessionID)
+			activityAt = s.CreatedAt
+		}
+		idleTimeout := s.IdleTimeout.Duration
+		if idleTimeout == 0 {
+			idleTimeout = DefaultSandboxIdleTimeout
+		}
+		if activityAt.Add(idleTimeout).Before(now) {
+			inactiveSandboxes = append(inactiveSandboxes, s)
+		}
+	}
+
+	// List sandboxes that have reached their expiry deadline
+	expiredSandboxes, err := gc.storeClient.ListExpiredSandboxes(ctx, now, gcCandidateLimit)
 	if err != nil {
 		klog.Errorf("garbage collector error listing expired sandboxes: %v", err)
 	}
-	gcSandboxes := make([]*types.SandboxInfo, 0, len(inactiveSandboxes)+len(expiredSandboxes))
-	gcSandboxes = append(gcSandboxes, inactiveSandboxes...)
-	gcSandboxes = append(gcSandboxes, expiredSandboxes...)
+	// Merge and deduplicate: a sandbox may appear in both lists when it is
+	// simultaneously idle-timed-out and past its TTL.
+	gcSandboxes := deduplicateSandboxes(inactiveSandboxes, expiredSandboxes)
 
 	if len(gcSandboxes) > 0 {
 		klog.Infof("garbage collector found %d sandboxes to be deleted", len(gcSandboxes))
@@ -128,4 +161,24 @@ func (gc *garbageCollector) deleteSandboxClaim(ctx context.Context, namespace, n
 		return fmt.Errorf("error deleting sandboxClaim %s/%s: %w", namespace, name, err)
 	}
 	return nil
+}
+
+// deduplicateSandboxes merges multiple sandbox lists and removes duplicates
+// by SessionID, preserving the order of first occurrence.
+func deduplicateSandboxes(lists ...[]*types.SandboxInfo) []*types.SandboxInfo {
+	total := 0
+	for _, l := range lists {
+		total += len(l)
+	}
+	seen := make(map[string]struct{}, total)
+	result := make([]*types.SandboxInfo, 0, total)
+	for _, list := range lists {
+		for _, s := range list {
+			if _, ok := seen[s.SessionID]; !ok {
+				seen[s.SessionID] = struct{}{}
+				result = append(result, s)
+			}
+		}
+	}
+	return result
 }

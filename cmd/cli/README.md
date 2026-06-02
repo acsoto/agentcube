@@ -6,7 +6,7 @@ AgentCube CLI is a developer tool that streamlines the development, packaging, b
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10+
 - Git
 - Docker (optional, for container builds)
 
@@ -41,7 +41,7 @@ pip install -e .
    ```bash
    kubectl agentcube publish \
       -f examples/hello-agent \
-      --image-url "docker.io/username/my-agent" \
+      --image-url "docker.io/username/my-agent"
    ```
 
 4. **Invoke your agent:**
@@ -69,7 +69,7 @@ pip install -e .
 ### From PyPI (Recommended)
 
 ```bash
-pip install agentcube
+pip install agentcube-cli
 ```
 
 ### From Source

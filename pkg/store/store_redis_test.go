@@ -122,7 +122,7 @@ func TestRedisStore_UpdateSandbox(t *testing.T) {
 	}
 	err := c.UpdateSandbox(ctx, sandboxStoreStruct)
 	assert.NotNil(t, err)
-	assert.Contains(t, err.Error(), "key not exists")
+	assert.Contains(t, err.Error(), "key does not exist")
 }
 
 func TestGetSandboxBySessionIDNotFound(t *testing.T) {
@@ -240,6 +240,68 @@ func TestListInactiveSandboxes(t *testing.T) {
 	}
 }
 
+// TestLoadSandboxesBySessionIDs_OrphanedZSetEntry verifies that
+// loadSandboxesBySessionIDs skips session IDs whose hash key has been evicted
+// from Redis (orphaned sorted-set entry) instead of aborting the entire batch.
+//
+// This scenario occurs in production when Redis evicts hash keys under memory
+// pressure (allkeys-lru policy) while leaving sorted-set index entries intact,
+// causing garbage collection to fail for the whole batch.
+func TestLoadSandboxesBySessionIDs_OrphanedZSetEntry(t *testing.T) {
+	ctx := context.Background()
+	c, mr := newTestRedisClient(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	sb1 := newTestSandbox("sb-orphan", "sess-orphan", now.Add(-1*time.Hour))
+	sb2 := newTestSandbox("sb-alive", "sess-alive", now.Add(-2*time.Hour))
+
+	if err := c.StoreSandbox(ctx, sb1); err != nil {
+		t.Fatalf("StoreSandbox sb1 error: %v", err)
+	}
+	if err := c.StoreSandbox(ctx, sb2); err != nil {
+		t.Fatalf("StoreSandbox sb2 error: %v", err)
+	}
+
+	// Simulate Redis evicting the hash key for sb1 while leaving its zset entry.
+	mr.Del(c.sessionKey("sess-orphan"))
+
+	result, err := c.loadSandboxesBySessionIDs(ctx, []string{"sess-orphan", "sess-alive"})
+	if err != nil {
+		t.Fatalf("expected no error with orphaned zset entry, got: %v", err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 sandbox (the non-evicted one), got %d", len(result))
+	}
+	if result[0].SandboxID != "sb-alive" {
+		t.Fatalf("expected sb-alive, got %s", result[0].SandboxID)
+	}
+}
+
+func TestListInactiveSandboxes_PopulatesLastActivityAt(t *testing.T) {
+	ctx := context.Background()
+	c, _ := newTestRedisClient(t)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	assert.NoError(t, c.StoreSandbox(ctx, newTestSandbox("sb-1", "sess-1", now.Add(10*time.Minute))))
+	assert.NoError(t, c.StoreSandbox(ctx, newTestSandbox("sb-2", "sess-2", now.Add(10*time.Minute))))
+	assert.NoError(t, c.UpdateSessionLastActivity(ctx, "sess-1", now.Add(-3*time.Hour)))
+	assert.NoError(t, c.UpdateSessionLastActivity(ctx, "sess-2", now.Add(-2*time.Hour)))
+
+	list, err := c.ListInactiveSandboxes(ctx, now, 10)
+	assert.NoError(t, err)
+	assert.Len(t, list, 2)
+
+	bySession := map[string]*types.SandboxInfo{}
+	for _, sb := range list {
+		bySession[sb.SessionID] = sb
+	}
+	// LastActivityAt must reflect the score written by UpdateSessionLastActivity.
+	assert.Equal(t, now.Add(-3*time.Hour).Unix(), bySession["sess-1"].LastActivityAt.Unix())
+	assert.Equal(t, now.Add(-2*time.Hour).Unix(), bySession["sess-2"].LastActivityAt.Unix())
+}
+
 func TestUpdateSandboxLastActivity(t *testing.T) {
 	ctx := context.Background()
 	c, mr := newTestRedisClient(t)
@@ -280,5 +342,14 @@ func TestUpdateSandboxLastActivity(t *testing.T) {
 	}
 	if int64(score) != newLastActivity.Unix() {
 		t.Fatalf("unexpected lastActivity score after update: got %v, want %v", score, newLastActivity.Unix())
+	}
+
+	// session not exists
+	err = c.UpdateSessionLastActivity(ctx, "sess-1-not-exist", newLastActivity)
+	if err == nil {
+		t.Fatalf("expected error for non-existent session")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }

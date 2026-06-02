@@ -14,7 +14,7 @@
 
 import os
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from agentcube.clients.control_plane import ControlPlaneClient
 from agentcube.clients.code_interpreter_data_plane import CodeInterpreterDataPlaneClient
@@ -40,11 +40,11 @@ class CodeInterpreterClient:
         # Session reuse for multi-step workflows (file system persists, NOT variables)
         client1 = CodeInterpreterClient()
         session_id = client1.session_id
-        client1.write_file("42", "/tmp/value.txt")
+        client1.write_file("42", "value.txt")
         # Don't call stop() - let session persist
 
         client2 = CodeInterpreterClient(session_id=session_id)
-        client2.run_code("python", "print(open('/tmp/value.txt').read())")  # File persists
+        client2.run_code("python", "print(open('value.txt').read())")  # File persists
         client2.stop()  # Cleanup when done
     """
 
@@ -175,6 +175,12 @@ class CodeInterpreterClient:
             str: The output of the command.
         """
         return self.dp_client.execute_command(command, timeout)
+
+    def execute_command_result(
+        self, command: str, timeout: Optional[float] = None
+    ) -> dict[str, Any]:
+        """Run a shell command and return ``stdout``, ``stderr``, and ``exit_code`` (no raise on failure)."""
+        return self.dp_client.execute_command_result(command, timeout)
 
     def run_code(self, language: str, code: str, timeout: Optional[float] = None) -> str:
         """

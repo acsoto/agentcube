@@ -19,6 +19,7 @@ package workloadmanager
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -28,9 +29,8 @@ import (
 	runtimev1alpha1 "github.com/volcano-sh/agentcube/pkg/apis/runtime/v1alpha1"
 	"github.com/volcano-sh/agentcube/pkg/common/types"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
@@ -145,6 +145,7 @@ type buildSandboxClaimParams struct {
 	name                string
 	sandboxTemplateName string
 	sessionID           string
+	idleTimeout         time.Duration
 	// ownerReference is the reference to the CodeInterpreter that creates this SandboxClaim
 	ownerReference *metav1.OwnerReference
 }
@@ -159,6 +160,17 @@ func buildSandboxObject(params *buildSandboxParams) *sandboxv1alpha1.Sandbox {
 	}
 
 	shutdownTime := metav1.NewTime(time.Now().Add(params.ttl))
+
+	// Allocate fresh maps for copied metadata so we never mutate informer-cached input.
+	// Annotations are only copied when params.podAnnotations is non-nil.
+	podLabels := make(map[string]string, len(params.podLabels)+2)
+	maps.Copy(podLabels, params.podLabels)
+	podLabels[SessionIdLabelKey] = params.sessionID
+	podLabels[SandboxNameLabelKey] = params.sandboxName
+
+	podAnnotations := make(map[string]string, len(params.podAnnotations))
+	maps.Copy(podAnnotations, params.podAnnotations)
+
 	// Create Sandbox object using agent-sandbox types
 	sandbox := &sandboxv1alpha1.Sandbox{
 		TypeMeta: metav1.TypeMeta{
@@ -181,8 +193,8 @@ func buildSandboxObject(params *buildSandboxParams) *sandboxv1alpha1.Sandbox {
 			PodTemplate: sandboxv1alpha1.PodTemplate{
 				Spec: params.podSpec,
 				ObjectMeta: sandboxv1alpha1.PodMetadata{
-					Labels:      params.podLabels,
-					Annotations: params.podAnnotations,
+					Labels:      podLabels,
+					Annotations: podAnnotations,
 				},
 			},
 			Lifecycle: sandboxv1alpha1.Lifecycle{
@@ -191,15 +203,14 @@ func buildSandboxObject(params *buildSandboxParams) *sandboxv1alpha1.Sandbox {
 			Replicas: ptr.To[int32](1),
 		},
 	}
-	if len(sandbox.Spec.PodTemplate.ObjectMeta.Labels) == 0 {
-		sandbox.Spec.PodTemplate.ObjectMeta.Labels = make(map[string]string, 2)
-	}
-	sandbox.Spec.PodTemplate.ObjectMeta.Labels[SessionIdLabelKey] = params.sessionID
-	sandbox.Spec.PodTemplate.ObjectMeta.Labels[SandboxNameLabelKey] = params.sandboxName
 	return sandbox
 }
 
 func buildSandboxClaimObject(params *buildSandboxClaimParams) *extensionsv1alpha1.SandboxClaim {
+	idleTimeout := params.idleTimeout
+	if idleTimeout == 0 {
+		idleTimeout = DefaultSandboxIdleTimeout
+	}
 	sandboxClaim := &extensionsv1alpha1.SandboxClaim{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "extensions.agents.x-k8s.io/v1alpha1",
@@ -212,7 +223,9 @@ func buildSandboxClaimObject(params *buildSandboxClaimParams) *extensionsv1alpha
 				SessionIdLabelKey:   params.sessionID,
 				SandboxNameLabelKey: params.name,
 			},
-			Annotations: map[string]string{},
+			Annotations: map[string]string{
+				IdleTimeoutAnnotationKey: idleTimeout.String(),
+			},
 		},
 		Spec: extensionsv1alpha1.SandboxClaimSpec{
 			TemplateRef: extensionsv1alpha1.SandboxTemplateRef{
@@ -228,22 +241,12 @@ func buildSandboxClaimObject(params *buildSandboxClaimParams) *extensionsv1alpha
 }
 
 func buildSandboxByAgentRuntime(namespace string, name string, ifm *Informers) (*sandboxv1alpha1.Sandbox, *sandboxEntry, error) {
-	agentRuntimeKey := namespace + "/" + name
-	// TODO(hzxuzhonghu): make use of typed informer, so we don't need to do type conversion below
-	runtimeObj, exists, _ := ifm.AgentRuntimeInformer.GetStore().GetByKey(agentRuntimeKey)
-	if !exists {
-		return nil, nil, api.ErrAgentRuntimeNotFound
-	}
-
-	unstructuredObj, ok := runtimeObj.(*unstructured.Unstructured)
-	if !ok {
-		klog.Errorf("agent runtime %s type asserting unstructured.Unstructured failed", agentRuntimeKey)
-		return nil, nil, fmt.Errorf("agent runtime type asserting failed")
-	}
-
-	var agentRuntimeObj runtimev1alpha1.AgentRuntime
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.Object, &agentRuntimeObj); err != nil {
-		return nil, nil, fmt.Errorf("failed to convert unstructured to AgentRuntime: %w", err)
+	agentRuntimeObj, err := ifm.AgentRuntimeLister.AgentRuntimes(namespace).Get(name)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil, api.ErrAgentRuntimeNotFound
+		}
+		return nil, nil, fmt.Errorf("failed to get agent runtime %s/%s: %w", namespace, name, err)
 	}
 
 	sessionID := uuid.New().String()
@@ -272,37 +275,43 @@ func buildSandboxByAgentRuntime(namespace string, name string, ifm *Informers) (
 	if agentRuntimeObj.Spec.MaxSessionDuration != nil {
 		buildParams.ttl = agentRuntimeObj.Spec.MaxSessionDuration.Duration
 	}
+	idleTimeout := DefaultSandboxIdleTimeout
 	if agentRuntimeObj.Spec.SessionTimeout != nil {
-		buildParams.idleTimeout = agentRuntimeObj.Spec.SessionTimeout.Duration
+		idleTimeout = agentRuntimeObj.Spec.SessionTimeout.Duration
 	}
+	buildParams.idleTimeout = idleTimeout
+
 	sandbox := buildSandboxObject(buildParams)
 	entry := &sandboxEntry{
-		Kind:      types.SandboxKind,
-		Ports:     agentRuntimeObj.Spec.Ports,
-		SessionID: sessionID,
+		Kind:        types.SandboxKind,
+		Ports:       agentRuntimeObj.Spec.Ports,
+		SessionID:   sessionID,
+		IdleTimeout: idleTimeout,
 	}
 	return sandbox, entry, nil
 }
 
-func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string, informer *Informers) (*sandboxv1alpha1.Sandbox, *extensionsv1alpha1.SandboxClaim, *sandboxEntry, error) {
-	codeInterpreterKey := namespace + "/" + codeInterpreterName
-	// TODO(hzxuzhonghu): make use of typed informer, so we don't need to do type conversion below
-	runtimeObj, exists, err := informer.CodeInterpreterInformer.GetStore().GetByKey(codeInterpreterKey)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get code interpreter %s from informer cache: %w", codeInterpreterKey, err)
+// buildCodeInterpreterEnvVars copies the template env vars and injects the
+// public key when authMode is picod.
+func buildCodeInterpreterEnvVars(templateEnv []corev1.EnvVar, authMode runtimev1alpha1.AuthModeType) []corev1.EnvVar {
+	envVars := make([]corev1.EnvVar, len(templateEnv))
+	copy(envVars, templateEnv)
+	if authMode == runtimev1alpha1.AuthModePicoD {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "PICOD_AUTH_PUBLIC_KEY",
+			Value: GetCachedPublicKey(),
+		})
 	}
-	if !exists {
-		return nil, nil, nil, api.ErrCodeInterpreterNotFound
-	}
-	unstructuredObj, ok := runtimeObj.(*unstructured.Unstructured)
-	if !ok {
-		klog.Errorf("code interpreter %s type asserting unstructured.Unstructured failed", codeInterpreterKey)
-		return nil, nil, nil, fmt.Errorf("code interpreter type asserting failed")
-	}
+	return envVars
+}
 
-	var codeInterpreterObj runtimev1alpha1.CodeInterpreter
-	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.Object, &codeInterpreterObj); err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to convert unstructured to CodeInterpreter: %w", err)
+func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string, informer *Informers) (*sandboxv1alpha1.Sandbox, *extensionsv1alpha1.SandboxClaim, *sandboxEntry, error) {
+	codeInterpreterObj, err := informer.CodeInterpreterLister.CodeInterpreters(namespace).Get(codeInterpreterName)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil, nil, api.ErrCodeInterpreterNotFound
+		}
+		return nil, nil, nil, fmt.Errorf("failed to get code interpreter %s/%s: %w", namespace, codeInterpreterName, err)
 	}
 
 	// Check public key available if authMode is picod
@@ -312,10 +321,17 @@ func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string,
 
 	sessionID := uuid.New().String()
 	sandboxName := fmt.Sprintf("%s-%s", codeInterpreterName, RandString(8))
+
+	idleTimeout := DefaultSandboxIdleTimeout
+	if codeInterpreterObj.Spec.SessionTimeout != nil {
+		idleTimeout = codeInterpreterObj.Spec.SessionTimeout.Duration
+	}
+
 	sandboxEntry := &sandboxEntry{
-		Kind:      types.SandboxKind,
-		Ports:     codeInterpreterObj.Spec.Ports,
-		SessionID: sessionID,
+		Kind:        types.SandboxKind,
+		Ports:       codeInterpreterObj.Spec.Ports,
+		SessionID:   sessionID,
+		IdleTimeout: idleTimeout,
 	}
 
 	// Set default port for code interpreter if not configured
@@ -335,9 +351,10 @@ func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string,
 			name:                sandboxName,
 			sandboxTemplateName: codeInterpreterName,
 			sessionID:           sessionID,
+			idleTimeout:         idleTimeout,
 			ownerReference: &metav1.OwnerReference{
-				APIVersion: codeInterpreterObj.APIVersion,
-				Kind:       codeInterpreterObj.Kind,
+				APIVersion: runtimev1alpha1.CodeInterpreterGroupVersionKind.GroupVersion().String(),
+				Kind:       runtimev1alpha1.CodeInterpreterKind,
 				Name:       codeInterpreterObj.Name,
 				UID:        codeInterpreterObj.UID,
 			},
@@ -351,6 +368,10 @@ func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string,
 				},
 			},
 		}
+		if codeInterpreterObj.Spec.MaxSessionDuration != nil {
+			shutdownTime := metav1.NewTime(time.Now().Add(codeInterpreterObj.Spec.MaxSessionDuration.Duration))
+			simpleSandbox.Spec.Lifecycle.ShutdownTime = &shutdownTime
+		}
 		sandboxEntry.Kind = types.SandboxClaimsKind
 		return simpleSandbox, sandboxClaim, sandboxEntry, nil
 	}
@@ -361,16 +382,7 @@ func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string,
 		runtimeClassName = nil
 	}
 
-	// Build environment variables - create a copy to avoid mutating the informer cached object
-	envVars := make([]corev1.EnvVar, len(codeInterpreterObj.Spec.Template.Environment))
-	copy(envVars, codeInterpreterObj.Spec.Template.Environment)
-	// Only inject public key for picod auth mode (default behavior)
-	if codeInterpreterObj.Spec.AuthMode == runtimev1alpha1.AuthModePicoD {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  "PICOD_AUTH_PUBLIC_KEY",
-			Value: GetCachedPublicKey(),
-		})
-	}
+	envVars := buildCodeInterpreterEnvVars(codeInterpreterObj.Spec.Template.Environment, codeInterpreterObj.Spec.AuthMode)
 
 	podSpec := corev1.PodSpec{
 		ImagePullSecrets: codeInterpreterObj.Spec.Template.ImagePullSecrets,
@@ -391,11 +403,14 @@ func buildSandboxByCodeInterpreter(namespace string, codeInterpreterName string,
 	buildParams := &buildSandboxParams{
 		sandboxName:    sandboxName,
 		namespace:      namespace,
+		workloadName:   codeInterpreterName,
 		sessionID:      sessionID,
 		podSpec:        podSpec,
 		podLabels:      codeInterpreterObj.Spec.Template.Labels,
 		podAnnotations: codeInterpreterObj.Spec.Template.Annotations,
+		idleTimeout:    idleTimeout,
 	}
+
 	if codeInterpreterObj.Spec.MaxSessionDuration != nil {
 		buildParams.ttl = codeInterpreterObj.Spec.MaxSessionDuration.Duration
 	}

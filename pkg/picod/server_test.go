@@ -23,10 +23,12 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -97,6 +99,24 @@ func TestNewServer_WorkspaceConfiguration(t *testing.T) {
 				absCwd, err := filepath.Abs(cwd)
 				require.NoError(t, err)
 				assert.Equal(t, absCwd, server.workspaceDir)
+			},
+		},
+		{
+			name: "non-existent workspace directory is created",
+			setupWorkDir: func(t *testing.T) (string, func()) {
+				tmpDir, err := os.MkdirTemp("", "picod-server-test-*")
+				require.NoError(t, err)
+				// Point to a subdirectory that does not exist yet
+				nonExistent := filepath.Join(tmpDir, "workspace", "nested")
+				return nonExistent, func() { os.RemoveAll(tmpDir) }
+			},
+			verifyResult: func(t *testing.T, server *Server) {
+				assert.NotNil(t, server)
+				assert.True(t, filepath.IsAbs(server.workspaceDir))
+				// Directory must have been created by setWorkspace
+				info, err := os.Stat(server.workspaceDir)
+				assert.NoError(t, err, "workspace directory should exist after NewServer")
+				assert.True(t, info.IsDir())
 			},
 		},
 		{
@@ -349,4 +369,138 @@ func TestNewServer_DifferentPorts(t *testing.T) {
 			assert.Equal(t, port, server.config.Port)
 		})
 	}
+}
+
+func TestServer_GzipMiddleware_CompressesResponse(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "picod-server-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	pubKeyPEM := generateTestPublicKeyPEM(t)
+	os.Setenv(PublicKeyEnvVar, pubKeyPEM)
+	defer os.Unsetenv(PublicKeyEnvVar)
+
+	server := NewServer(Config{
+		Port:      8080,
+		Workspace: tmpDir,
+	})
+
+	ts := httptest.NewServer(server.engine)
+	defer ts.Close()
+
+	// A client that sends Accept-Encoding: gzip should receive a gzip-compressed response.
+	// The /health endpoint responds with a JSON body that gin-contrib/gzip will compress.
+	// However, /health is in the excluded paths — so we use /api/execute (which returns
+	// 401 Unauthorized, a non-empty JSON body that gzip will still compress).
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/execute", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	client := &http.Client{
+		// Disable automatic transparent decompression so we can inspect the raw header.
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	// The middleware must set Content-Encoding: gzip on the wire.
+	assert.Equal(t, "gzip", resp.Header.Get("Content-Encoding"),
+		"response should be gzip-compressed when client advertises Accept-Encoding: gzip")
+}
+
+func TestServer_GzipMiddleware_ExcludesHealthEndpoint(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "picod-server-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	pubKeyPEM := generateTestPublicKeyPEM(t)
+	os.Setenv(PublicKeyEnvVar, pubKeyPEM)
+	defer os.Unsetenv(PublicKeyEnvVar)
+
+	server := NewServer(Config{
+		Port:      8080,
+		Workspace: tmpDir,
+	})
+
+	ts := httptest.NewServer(server.engine)
+	defer ts.Close()
+
+	// /health is in the WithExcludedPaths list, so even when the client requests gzip
+	// the middleware must NOT set Content-Encoding: gzip on that path.
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/health", nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NotEqual(t, "gzip", resp.Header.Get("Content-Encoding"),
+		"/health is an excluded path and must not be gzip-compressed")
+}
+
+func TestNewServer_JWTMode_RequiresAuth(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "picod-server-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	pubKeyPEM := generateTestPublicKeyPEM(t)
+	os.Setenv(PublicKeyEnvVar, pubKeyPEM)
+	defer os.Unsetenv(PublicKeyEnvVar)
+
+	config := Config{
+		Port:      8080,
+		Workspace: tmpDir,
+	}
+
+	server := NewServer(config)
+	ts := httptest.NewServer(server.engine)
+	defer ts.Close()
+
+	// API endpoint should return 401 when JWT mode is active
+	resp, err := http.Post(ts.URL+"/api/execute", "application/json", nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "JWT mode should require auth")
+	resp.Body.Close()
+}
+
+func TestServer_MaxBodySizeMiddleware(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "picod-server-test-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	pubKeyPEM := generateTestPublicKeyPEM(t)
+	os.Setenv(PublicKeyEnvVar, pubKeyPEM)
+	defer os.Unsetenv(PublicKeyEnvVar)
+
+	server := NewServer(Config{
+		Port:      8080,
+		Workspace: tmpDir,
+	})
+
+	ts := httptest.NewServer(server.engine)
+	defer ts.Close()
+
+	// When Content-Length exceeds MaxBodySize, the global body-size limiter
+	// middleware should reject the request with 413 before any other
+	// middleware (auth, handler) gets a chance to run.
+	oversizedBody := strings.NewReader(strings.Repeat("x", int(MaxBodySize)+1))
+	resp, err := http.Post(ts.URL+"/api/execute", "application/json", oversizedBody)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "request body too large")
 }

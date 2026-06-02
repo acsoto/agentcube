@@ -17,13 +17,20 @@ limitations under the License.
 package picod
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	"k8s.io/klog/v2"
+)
+
+const (
+	// MaxBodySize limits request body size to prevent memory exhaustion
+	MaxBodySize = 32 << 20 // 32 MB
 )
 
 // Config defines server configuration
@@ -51,17 +58,16 @@ func NewServer(config Config) *Server {
 
 	// Initialize workspace directory
 	klog.Infof("Initializing workspace with config.Workspace: %q", config.Workspace)
-	if config.Workspace != "" {
-		s.setWorkspace(config.Workspace)
-		klog.Infof("Set workspace to configured value: %q", config.Workspace)
-	} else {
-		// Default to current working directory if not specified
+	workspaceDir := config.Workspace
+	if workspaceDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			klog.Fatalf("Failed to get current working directory: %v", err)
 		}
-		s.setWorkspace(cwd)
-		klog.Infof("Set workspace to current working directory: %q", cwd)
+		workspaceDir = cwd
+	}
+	if err := s.setWorkspace(workspaceDir); err != nil {
+		klog.Fatalf("Failed to initialize workspace: %v", err)
 	}
 	klog.Infof("Final workspace directory: %q", s.workspaceDir)
 
@@ -73,13 +79,16 @@ func NewServer(config Config) *Server {
 	// Global middleware
 	engine.Use(gin.Logger())   // Request logging
 	engine.Use(gin.Recovery()) // Crash recovery
+	engine.Use(maxBodySizeMiddleware())
+	engine.MaxMultipartMemory = MaxBodySize
+	engine.Use(gzip.Gzip(gzip.BestSpeed, gzip.WithExcludedPaths([]string{"/health"}))) // Response compression
 
-	// Load public key from environment variable (required)
+	// Load public key from environment variable (required for JWT auth)
 	if err := s.authManager.LoadPublicKeyFromEnv(); err != nil {
 		klog.Fatalf("Failed to load public key from environment: %v", err)
 	}
 
-	// API route group (Authenticated)
+	// API route group with JWT authentication
 	api := engine.Group("/api")
 	api.Use(s.authManager.AuthMiddleware())
 	{
@@ -96,18 +105,47 @@ func NewServer(config Config) *Server {
 	return s
 }
 
-// Run starts the server
-func (s *Server) Run() error {
+func maxBodySizeMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.ContentLength > MaxBodySize {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error":  "request body too large",
+				"detail": fmt.Sprintf("maximum allowed size is %d bytes", MaxBodySize),
+			})
+			c.Abort()
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxBodySize)
+		c.Next()
+	}
+}
+
+// Start starts the server and blocks until ctx is canceled or a fatal error occurs.
+func (s *Server) Start(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", s.config.Port)
 	klog.Infof("PicoD server starting on %s", addr)
 
-	server := &http.Server{
+	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           s.engine,
 		ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 	}
 
-	return server.ListenAndServe()
+	// Listen for shutdown signal and gracefully stop the HTTP server.
+	go func() {
+		<-ctx.Done()
+		klog.Info("Shutting down PicoD server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			klog.Errorf("PicoD server shutdown error: %v", err)
+		}
+	}()
+
+	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 // HealthCheckHandler handles health check requests

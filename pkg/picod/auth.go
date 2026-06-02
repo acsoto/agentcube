@@ -33,9 +33,6 @@ import (
 )
 
 const (
-	// MaxBodySize limits request body size to prevent memory exhaustion
-	MaxBodySize = 32 << 20 // 32 MB
-
 	// PublicKeyEnvVar is the environment variable name for the public key
 	PublicKeyEnvVar = "PICOD_AUTH_PUBLIC_KEY"
 )
@@ -70,7 +67,7 @@ func (am *AuthManager) LoadPublicKeyFromEnv() error {
 
 	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse public key: %v", err)
+		return fmt.Errorf("failed to parse public key: %w", err)
 	}
 
 	rsaPub, ok := pub.(*rsa.PublicKey)
@@ -130,9 +127,6 @@ func (am *AuthManager) AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-
-		// Enforce maximum body size to prevent memory exhaustion
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, MaxBodySize)
 
 		c.Next()
 	}

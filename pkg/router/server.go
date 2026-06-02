@@ -51,9 +51,15 @@ func NewServer(config *Config) (*Server, error) {
 	if config.MaxConcurrentRequests <= 0 {
 		config.MaxConcurrentRequests = 1000 // Default limit
 	}
+	if config.InitialConnectRetryCount < 0 {
+		config.InitialConnectRetryCount = 0
+	}
+	if config.InitialConnectRetryInterval <= 0 {
+		config.InitialConnectRetryInterval = 200 * time.Millisecond
+	}
 
-	// Create session manager with store client
-	sessionManager, err := NewSessionManager(store.Storage())
+	// Create session manager with store client and mTLS config
+	sessionManager, err := NewSessionManager(store.Storage(), &config.MTLSConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session manager: %w", err)
 	}
@@ -112,7 +118,7 @@ func (s *Server) concurrencyLimitMiddleware() gin.HandlerFunc {
 			}()
 			c.Next()
 		default:
-			// No slots available, return 503 Service Unavailable
+			// No slots available, return 429 Too Many Requests
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error": "server overloaded, please try again later",
 				"code":  "SERVER_OVERLOADED",
@@ -153,7 +159,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Create HTTP/2 server for better performance
 	h2s := &http2.Server{}
-	
+
 	// Wrap handler with h2c for HTTP/2 cleartext support
 	h2cHandler := h2c.NewHandler(s.engine, h2s)
 
@@ -173,17 +179,26 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 			klog.Errorf("Server shutdown error: %v", err)
 		}
+		if s.sessionManager != nil {
+			_ = s.sessionManager.Close()
+		}
 	}()
 
 	klog.Infof("Router server listening on %s", addr)
 
 	// Start HTTP or HTTPS server
+	var err error
 	if s.config.EnableTLS {
 		if s.config.TLSCert == "" || s.config.TLSKey == "" {
 			return fmt.Errorf("TLS enabled but cert/key not provided")
 		}
-		return s.httpServer.ListenAndServeTLS(s.config.TLSCert, s.config.TLSKey)
+		err = s.httpServer.ListenAndServeTLS(s.config.TLSCert, s.config.TLSKey)
+	} else {
+		err = s.httpServer.ListenAndServe()
 	}
 
-	return s.httpServer.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

@@ -86,18 +86,13 @@ build-all: build build-agentd build-router ## Build all binaries
 run:
 	@echo "Running workloadmanager..."
 	go run ./cmd/workload-manager/main.go \
-		--port=8080 \
-		--ssh-username=sandbox \
-		--ssh-port=22
+		--port=8080
 
 # Run server (with kubeconfig)
 run-local:
 	@echo "Running workloadmanager with local kubeconfig..."
 	go run ./cmd/workload-manager/main.go \
-		--port=8080 \
-		--kubeconfig=${HOME}/.kube/config \
-		--ssh-username=sandbox \
-		--ssh-port=22
+		--port=8080
 
 # Run router (development mode)
 run-router:
@@ -319,6 +314,17 @@ e2e-clean:
 .PHONY: build-python-sdk
 build-python-sdk: ## Build Python SDK
 	@echo "Building Python SDK..."
-	cp LICENSE sdk-python/LICENSE
-	cd sdk-python && python3 -m build; cd ..; rm -f sdk-python/LICENSE
+	@tmp_file="$(PROJECT_DIR)/sdk-python/LICENSE"; \
+	trap 'rm -f "$$tmp_file"' EXIT; \
+	cp LICENSE "$$tmp_file"; \
+	cd sdk-python && python3 -m build
 	@echo "Build complete. Artifacts are in sdk-python/dist/"
+
+.PHONY: build-python-cli
+build-python-cli: ## Build Python CLI
+	@echo "Building Python CLI..."
+	@tmp_file="$(PROJECT_DIR)/cmd/cli/LICENSE"; \
+	trap 'rm -f "$$tmp_file"' EXIT; \
+	cp LICENSE "$$tmp_file"; \
+	cd cmd/cli && python3 -m build
+	@echo "Build complete. Artifacts are in cmd/cli/dist/"

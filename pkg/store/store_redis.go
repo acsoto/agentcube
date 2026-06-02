@@ -89,7 +89,7 @@ func (rs *redisStore) loadSandboxesBySessionIDs(ctx context.Context, sessionIDs 
 		sandboxCommands[i] = pipe.Get(ctx, sessionKey)
 	}
 	_, pipeErr := pipe.Exec(ctx)
-	if pipeErr != nil {
+	if pipeErr != nil && !errors.Is(pipeErr, redisv9.Nil) {
 		return nil, fmt.Errorf("redis pipeline exec failed: %w", pipeErr)
 	}
 
@@ -207,8 +207,8 @@ func (rs *redisStore) UpdateSandbox(ctx context.Context, sandboxRedis *types.San
 		return fmt.Errorf("UpdateSandbox: redis SETXX %s: %w", sessionKey, err)
 	}
 
-	if ok == false {
-		return fmt.Errorf("UpdateSandbox: redis SETXX %s, key not exists", sessionKey)
+	if !ok {
+		return fmt.Errorf("UpdateSandbox: redis SETXX %s, key does not exist", sessionKey)
 	}
 	return nil
 }
@@ -250,29 +250,66 @@ func (rs *redisStore) ListExpiredSandboxes(ctx context.Context, before time.Time
 
 // ListInactiveSandboxes returns up to limit sandboxes whose last activity
 // time is before, using the last-activity sorted-set index.
+// LastActivityAt is populated on each returned SandboxInfo from the sorted-set
+// score so the caller can apply per-sandbox idle-timeout logic.
 func (rs *redisStore) ListInactiveSandboxes(ctx context.Context, before time.Time, limit int64) ([]*types.SandboxInfo, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
 
 	maxScore := before.Unix()
-	ids, err := rs.cli.ZRangeByScore(ctx, rs.lastActivityIndexKey, &redisv9.ZRangeBy{
+	zs, err := rs.cli.ZRangeByScoreWithScores(ctx, rs.lastActivityIndexKey, &redisv9.ZRangeBy{
 		Min:    "-inf",
 		Max:    fmt.Sprintf("%d", maxScore),
 		Offset: 0,
 		Count:  limit,
 	}).Result()
 	if err != nil {
-		return nil, fmt.Errorf("ListInactiveSandboxes: ZRangeByScore failed: %w", err)
+		return nil, fmt.Errorf("ListInactiveSandboxes: ZRangeByScoreWithScores failed: %w", err)
 	}
 
-	return rs.loadSandboxesBySessionIDs(ctx, ids)
+	ids := make([]string, len(zs))
+	scores := make(map[string]time.Time, len(zs))
+	for i, z := range zs {
+		id, ok := z.Member.(string)
+		if !ok {
+			return nil, fmt.Errorf("ListInactiveSandboxes: unexpected member type %T", z.Member)
+		}
+		ids[i] = id
+		scores[id] = time.Unix(int64(z.Score), 0)
+	}
+
+	sandboxes, err := rs.loadSandboxesBySessionIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, s := range sandboxes {
+		if t, ok := scores[s.SessionID]; ok {
+			s.LastActivityAt = t
+		}
+	}
+	return sandboxes, nil
 }
 
 // Close releases all resources held by the redis store.
 func (rs *redisStore) Close() error {
 	return rs.cli.Close()
 }
+
+// updateSessionLastActivityScript atomically checks if the session key exists
+// and updates its last activity time in the sorted-set index.
+// It uses EXISTS to verify presence rather than GET (which retrieved the
+// actual value in older implementations). This saves data transfer overhead,
+// if in future the value is required GET can be used instead.
+var updateSessionLastActivityScript = redisv9.NewScript(`
+if redis.call("EXISTS", KEYS[1]) == 1 then
+	redis.call("ZADD", KEYS[2], ARGV[2], ARGV[1])
+	return 1
+else
+	return 0
+end
+`)
 
 // UpdateSessionLastActivity updates the last-activity index for the given session.
 func (rs *redisStore) UpdateSessionLastActivity(ctx context.Context, sessionID string, at time.Time) error {
@@ -283,21 +320,14 @@ func (rs *redisStore) UpdateSessionLastActivity(ctx context.Context, sessionID s
 		at = time.Now()
 	}
 
-	// Ensure the sandbox mapping exists; otherwise treat as not found.
 	sessionKey := rs.sessionKey(sessionID)
-	_, err := rs.cli.Get(ctx, sessionKey).Result()
-	if errors.Is(err, redisv9.Nil) {
-		return ErrNotFound
-	}
+	res, err := updateSessionLastActivityScript.Run(ctx, rs.cli, []string{sessionKey, rs.lastActivityIndexKey}, sessionID, at.Unix()).Int64()
 	if err != nil {
-		return fmt.Errorf("UpdateSessionLastActivity: get mapping for sessionID %s: %w", sessionID, err)
+		return fmt.Errorf("UpdateSessionLastActivity: script execution failed for sessionID %s: %w", sessionID, err)
 	}
 
-	if _, err := rs.cli.ZAdd(ctx, rs.lastActivityIndexKey, redisv9.Z{
-		Score:  float64(at.Unix()),
-		Member: sessionID,
-	}).Result(); err != nil {
-		return fmt.Errorf("UpdateSessionLastActivity: ZAdd: %w", err)
+	if res == 0 {
+		return ErrNotFound
 	}
 
 	return nil

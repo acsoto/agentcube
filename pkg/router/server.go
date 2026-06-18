@@ -73,8 +73,10 @@ func NewServer(config *Config) (*Server, error) {
 
 	// Create a reusable HTTP transport for connection pooling
 	httpTransport := &http.Transport{
-		IdleConnTimeout:    0,
-		DisableCompression: false,
+		MaxIdleConns:        1000,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     0,
+		DisableCompression:  false,
 	}
 
 	server := &Server{

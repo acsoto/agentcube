@@ -26,10 +26,13 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
+
 # Set required env var before import
 os.environ.setdefault("ROUTER_URL", "http://mock-router:8080")
 
 from agentcube.code_interpreter import CodeInterpreterClient
+from agentcube.exceptions import SessionError, SessionNotFoundError
 
 
 class TestCodeInterpreterClientInit(unittest.TestCase):
@@ -108,6 +111,25 @@ class TestSessionReuse(unittest.TestCase):
         call_kwargs = mock_dp_class.call_args[1]
         self.assertEqual(call_kwargs['session_id'], "reused-session-789")
 
+    @patch('agentcube.code_interpreter.CodeInterpreterDataPlaneClient')
+    @patch('agentcube.code_interpreter.ControlPlaneClient')
+    def test_missing_session_is_invalidated(self, mock_cp_class, mock_dp_class):
+        mock_cp_class.return_value = Mock()
+        mock_dp = Mock()
+        mock_dp_class.return_value = mock_dp
+
+        client = CodeInterpreterClient(
+            router_url="http://test:8080",
+            session_id="expired-session",
+        )
+        callback = mock_dp_class.call_args.kwargs["on_session_not_found"]
+        callback()
+
+        self.assertIsNone(client.session_id)
+        with self.assertRaises(SessionError):
+            client.list_files()
+        mock_dp.list_files.assert_not_called()
+
 
 class TestContextManager(unittest.TestCase):
     """Test context manager behavior."""
@@ -153,6 +175,64 @@ class TestResourceLeakPrevention(unittest.TestCase):
 
         # Session should be cleaned up
         mock_cp.delete_session.assert_called_once_with("leaked-session-999")
+
+
+class TestCodeInterpreterDataPlaneSessionErrors(unittest.TestCase):
+    @patch('agentcube.clients.code_interpreter_data_plane.create_session')
+    def test_session_not_found_raises_typed_error_and_invalidates(self, mock_create_session):
+        session = Mock()
+        response = requests.Response()
+        response.status_code = 404
+        response._content = b'{"code":"SESSION_NOT_FOUND","error":"session expired"}'
+        session.request.return_value = response
+        session.headers = requests.structures.CaseInsensitiveDict({
+            "x-agentcube-session-id": "expired-session",
+        })
+        mock_create_session.return_value = session
+        callback = Mock()
+
+        from agentcube.clients.code_interpreter_data_plane import CodeInterpreterDataPlaneClient
+
+        client = CodeInterpreterDataPlaneClient(
+            session_id="expired-session",
+            base_url="http://router/invocations/",
+            on_session_not_found=callback,
+        )
+
+        with self.assertRaises(SessionNotFoundError) as ctx:
+            client.list_files()
+
+        self.assertEqual(ctx.exception.session_id, "expired-session")
+        self.assertIsNone(client.session_id)
+        self.assertNotIn("x-agentcube-session-id", session.headers)
+        callback.assert_called_once_with()
+        with self.assertRaises(SessionError):
+            client.list_files()
+        session.request.assert_called_once()
+
+    @patch('agentcube.clients.code_interpreter_data_plane.create_session')
+    def test_application_404_remains_http_error(self, mock_create_session):
+        session = Mock()
+        response = requests.Response()
+        response.status_code = 404
+        response._content = b'{"error":"application route not found"}'
+        session.request.return_value = response
+        session.headers = requests.structures.CaseInsensitiveDict({
+            "x-agentcube-session-id": "active-session",
+        })
+        mock_create_session.return_value = session
+
+        from agentcube.clients.code_interpreter_data_plane import CodeInterpreterDataPlaneClient
+
+        client = CodeInterpreterDataPlaneClient(
+            session_id="active-session",
+            base_url="http://router/invocations/",
+        )
+
+        with self.assertRaises(requests.exceptions.HTTPError):
+            client.list_files()
+
+        self.assertEqual(client.session_id, "active-session")
 
 
 if __name__ == "__main__":

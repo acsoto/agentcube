@@ -88,8 +88,9 @@ CodeInterpreterClient(
 )
 ```
 
-The effective maximum lifetime is the smaller of `ttl` and the
-CodeInterpreter CRD's `spec.maxSessionDuration`. A session can be reclaimed
+If `ttl` is omitted, the CodeInterpreter CRD's `spec.maxSessionDuration`
+determines the maximum lifetime. Otherwise, the effective maximum lifetime is
+the smaller of `ttl` and `spec.maxSessionDuration`. A session can be reclaimed
 earlier when it is idle for `spec.sessionTimeout`.
 
 **Environment Variables**:

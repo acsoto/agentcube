@@ -58,7 +58,7 @@ class CodeInterpreterClient:
         self,
         name: str = "my-interpreter",
         namespace: str = "default",
-        ttl: int = 3600,
+        ttl: Optional[int] = None,
         workload_manager_url: Optional[str] = None,
         router_url: Optional[str] = None,
         auth_token: Optional[str] = None,
@@ -75,7 +75,8 @@ class CodeInterpreterClient:
         Args:
             name: Name of the CodeInterpreter template (CRD name).
             namespace: Kubernetes namespace.
-            ttl: Time to live (seconds) for new sessions.
+            ttl: Optional requested maximum lifetime in seconds for new sessions.
+                When omitted, the workload configuration determines the lifetime.
             workload_manager_url: URL of WorkloadManager (Control Plane).
             router_url: URL of Router (Data Plane).
             auth_token: Auth token for Kubernetes/WorkloadManager.

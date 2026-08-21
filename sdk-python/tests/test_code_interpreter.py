@@ -32,6 +32,7 @@ import requests
 os.environ.setdefault("ROUTER_URL", "http://mock-router:8080")
 
 from agentcube.code_interpreter import CodeInterpreterClient
+from agentcube.clients.control_plane import ControlPlaneClient
 from agentcube.exceptions import SessionError, SessionNotFoundError
 
 
@@ -50,8 +51,27 @@ class TestCodeInterpreterClientInit(unittest.TestCase):
 
         # Session should be created
         self.assertEqual(client.session_id, "new-session-123")
-        mock_cp.create_session.assert_called_once()
+        mock_cp.create_session.assert_called_once_with(
+            name="my-interpreter",
+            namespace="default",
+            ttl=None,
+        )
         mock_dp_class.assert_called_once()
+
+    @patch('agentcube.code_interpreter.CodeInterpreterDataPlaneClient')
+    @patch('agentcube.code_interpreter.ControlPlaneClient')
+    def test_init_forwards_explicit_ttl(self, mock_cp_class, mock_dp_class):
+        mock_cp = Mock()
+        mock_cp.create_session.return_value = "new-session-123"
+        mock_cp_class.return_value = mock_cp
+
+        CodeInterpreterClient(router_url="http://test:8080", ttl=600)
+
+        mock_cp.create_session.assert_called_once_with(
+            name="my-interpreter",
+            namespace="default",
+            ttl=600,
+        )
 
     @patch('agentcube.code_interpreter.CodeInterpreterDataPlaneClient')
     @patch('agentcube.code_interpreter.ControlPlaneClient')
@@ -70,6 +90,37 @@ class TestCodeInterpreterClientInit(unittest.TestCase):
         mock_cp.create_session.assert_not_called()
         mock_dp_class.assert_called_once()
 
+
+class TestControlPlaneClientTTL(unittest.TestCase):
+    @patch('agentcube.clients.control_plane.create_session')
+    def test_omits_ttl_by_default(self, mock_create_session):
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"sessionId": "new-session-123"}
+        session.post.return_value = response
+        session.headers = {}
+        mock_create_session.return_value = session
+
+        client = ControlPlaneClient(workload_manager_url="http://test:8080")
+        client.create_session()
+
+        payload = session.post.call_args.kwargs["json"]
+        self.assertNotIn("ttl", payload)
+
+    @patch('agentcube.clients.control_plane.create_session')
+    def test_includes_explicit_ttl(self, mock_create_session):
+        session = Mock()
+        response = Mock()
+        response.json.return_value = {"sessionId": "new-session-123"}
+        session.post.return_value = response
+        session.headers = {}
+        mock_create_session.return_value = session
+
+        client = ControlPlaneClient(workload_manager_url="http://test:8080")
+        client.create_session(ttl=600)
+
+        payload = session.post.call_args.kwargs["json"]
+        self.assertEqual(payload["ttl"], 600)
 
 class TestSessionIdProperty(unittest.TestCase):
     """Test session_id property."""

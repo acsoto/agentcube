@@ -117,7 +117,7 @@ class ControlPlaneClient:
         Returns:
             session_id (str): The ID of the created session.
         """
-        payload = {
+        payload: Dict[str, Any] = {
             "name": name,
             "namespace": namespace,
             "metadata": metadata or {}

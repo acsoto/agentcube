@@ -122,6 +122,7 @@ class TestControlPlaneClientTTL(unittest.TestCase):
         payload = session.post.call_args.kwargs["json"]
         self.assertEqual(payload["ttl"], 600)
 
+
 class TestSessionIdProperty(unittest.TestCase):
     """Test session_id property."""
 

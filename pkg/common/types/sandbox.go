@@ -83,7 +83,7 @@ func (car *CreateSandboxRequest) Validate() error {
 		return fmt.Errorf("name is required")
 	}
 	if car.TTL != nil {
-		const maxDurationSeconds = int64((1<<63 - 1) / int64(time.Second))
+		const maxDurationSeconds = (1<<63 - 1) / int64(time.Second)
 		if *car.TTL <= 0 {
 			return fmt.Errorf("ttl must be greater than zero")
 		}

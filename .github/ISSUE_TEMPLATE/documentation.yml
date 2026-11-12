@@ -1,0 +1,47 @@
+name: Documentation
+description: Report incorrect or missing instructions or examples.
+labels:
+- kind/documentation
+body:
+- type: markdown
+  attributes:
+    value: 'Read the [contribution guidelines](https://github.com/volcano-sh/agentcube/blob/main/CONTRIBUTING.md#current-priorities-and-contribution-scope).
+      AgentCube prioritizes core capabilities, complete user workflows, and demonstrated failures in supported
+      usage. A template label does not indicate maintainer acceptance.
+
+
+      Identify a concrete documentation problem. General rewrites or style-only cleanup need maintainer
+      agreement before implementation.'
+- type: textarea
+  id: location
+  attributes:
+    label: Affected documentation
+    description: Link the page, section, or example and identify the affected version.
+  validations:
+    required: true
+- type: textarea
+  id: problem
+  attributes:
+    label: Problem and evidence
+    description: Explain what is incorrect or which user workflow lacks instructions. For a failing example
+      provide the commands, environment, and actual output. Remove sensitive data.
+  validations:
+    required: true
+- type: textarea
+  id: correction
+  attributes:
+    label: Expected correction
+    description: Describe the correct behavior or instructions and supporting references. Wait for scope
+      agreement before submitting a PR.
+  validations:
+    required: true
+- type: checkboxes
+  id: submission-checks
+  attributes:
+    label: Submission checks
+    options:
+    - label: I searched existing issues and discussions for duplicates.
+      required: true
+    - label: I read the contribution guidelines and will wait for maintainer agreement on the problem
+        and scope before submitting a PR.
+      required: true

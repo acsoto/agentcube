@@ -1,0 +1,78 @@
+name: Bug Report
+description: Report an actual failure in supported usage with reproduction evidence.
+labels:
+- kind/bug
+body:
+- type: markdown
+  attributes:
+    value: 'Read the [contribution guidelines](https://github.com/volcano-sh/agentcube/blob/main/CONTRIBUTING.md#current-priorities-and-contribution-scope).
+      AgentCube prioritizes core capabilities, complete user workflows, and demonstrated failures in supported
+      usage. A template label does not indicate maintainer acceptance.
+
+
+      Reports based solely on source-code inspection, static analysis, AI output, mocks, or unit tests
+      will be closed. Maintainers do not construct reproductions for speculative findings. Report security
+      concerns privately to volcano-security@googlegroups.com.'
+- type: textarea
+  id: scenario
+  attributes:
+    label: Usage scenario and impact
+    description: What task were you performing? What failed, and how did it affect the workflow?
+  validations:
+    required: true
+- type: textarea
+  id: expected
+  attributes:
+    label: Expected and actual behavior
+    description: Describe both results and the documentation or agreed behavior supporting your expectation.
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: Version and environment
+    description: Include the release or exact commit, deployment method, relevant configuration, and dependency
+      versions. For cluster issues, include Kubernetes version and cluster setup.
+  validations:
+    required: true
+- type: textarea
+  id: reproduction
+  attributes:
+    label: Steps to reproduce
+    description: Provide minimal configuration/manifests, inputs, and exact commands or requests. Cluster
+      lifecycle/orchestration failures require AgentCube deployed in a cluster (kind/minikube is sufficient).
+      SDK, CLI, or standalone component failures may use a minimal runnable example exercising a supported
+      public interface.
+  validations:
+    required: true
+- type: textarea
+  id: evidence
+  attributes:
+    label: Actual execution evidence
+    description: Paste relevant logs, events, errors, traces, or command output from your reproduction.
+      Attach screenshots/recordings where useful; these do not replace steps. For intermittent failures
+      include frequency and duration/attempt count. For performance claims include scale, measurements,
+      and collection method. Remove credentials and other sensitive data.
+  validations:
+    required: true
+- type: textarea
+  id: analysis
+  attributes:
+    label: Additional context
+    description: 'Optional: link related issues or root-cause analysis. Use commit-pinned code links.
+      A suggested fix is not required.'
+  validations:
+    required: false
+- type: checkboxes
+  id: submission-checks
+  attributes:
+    label: Submission checks
+    options:
+    - label: I searched existing issues and discussions for duplicates.
+      required: true
+    - label: I read the contribution guidelines and will wait for maintainer agreement on the problem
+        and scope before submitting a PR.
+      required: true
+    - label: I personally reproduced this failure through supported usage and included actual execution
+        evidence, rather than code analysis, AI output, mocks, or a unit test alone.
+      required: true

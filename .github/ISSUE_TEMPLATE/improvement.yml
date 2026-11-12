@@ -1,0 +1,49 @@
+name: Improvement Proposal
+description: Propose a change to an existing capability with a concrete need and benefit.
+labels:
+- kind/enhancement
+body:
+- type: markdown
+  attributes:
+    value: 'Read the [contribution guidelines](https://github.com/volcano-sh/agentcube/blob/main/CONTRIBUTING.md#current-priorities-and-contribution-scope).
+      AgentCube prioritizes core capabilities, complete user workflows, and demonstrated failures in supported
+      usage. A template label does not indicate maintainer acceptance.
+
+
+      Hypothetical corner-case fixes and unsolicited defensive hardening are generally outside current
+      scope. Discuss standalone cleanup/refactoring in [Discussions](https://github.com/volcano-sh/agentcube/discussions)
+      first. Reclassifying a speculative bug does not waive these requirements.'
+- type: textarea
+  id: need
+  attributes:
+    label: Existing workflow and concrete need
+    description: Describe how you use the existing capability and the specific limitation. If you claim
+      an actual failure, use Bug Report and supply reproduction evidence.
+  validations:
+    required: true
+- type: textarea
+  id: benefit
+  attributes:
+    label: Proposed improvement and evidence of benefit
+    description: Explain the expected benefit and why it matters now. For performance claims provide actual
+      measurements, workload scale, and collection method; explain relevant costs or tradeoffs.
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternatives and scope
+    description: Describe current workarounds, the smallest useful change, and why it merits maintenance
+      effort.
+  validations:
+    required: true
+- type: checkboxes
+  id: submission-checks
+  attributes:
+    label: Submission checks
+    options:
+    - label: I searched existing issues and discussions for duplicates.
+      required: true
+    - label: I read the contribution guidelines and will wait for maintainer agreement on the problem
+        and scope before submitting a PR.
+      required: true

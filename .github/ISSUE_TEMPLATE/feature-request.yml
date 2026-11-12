@@ -1,0 +1,48 @@
+name: Feature Request
+description: Propose a missing capability or new user workflow.
+labels:
+- kind/feature
+body:
+- type: markdown
+  attributes:
+    value: 'Read the [contribution guidelines](https://github.com/volcano-sh/agentcube/blob/main/CONTRIBUTING.md#current-priorities-and-contribution-scope).
+      AgentCube prioritizes core capabilities, complete user workflows, and demonstrated failures in supported
+      usage. A template label does not indicate maintainer acceptance.
+
+
+      Agree on design and scope before implementation. Use an Improvement Proposal for changes to existing
+      capabilities; use a Bug Report for an observed failure with reproduction evidence.'
+- type: textarea
+  id: use-case
+  attributes:
+    label: Use case and missing capability
+    description: Describe the concrete task you need to complete, who needs it, and why existing capabilities
+      do not meet that need.
+  validations:
+    required: true
+- type: textarea
+  id: outcome
+  attributes:
+    label: Expected outcome and scope
+    description: Describe the user-visible result and the smallest complete capability you propose. Explain
+      how it supports a core workflow.
+  validations:
+    required: true
+- type: textarea
+  id: alternatives
+  attributes:
+    label: Alternatives and tradeoffs
+    description: Describe existing workarounds or alternative approaches and relevant compatibility or
+      maintenance costs.
+  validations:
+    required: true
+- type: checkboxes
+  id: submission-checks
+  attributes:
+    label: Submission checks
+    options:
+    - label: I searched existing issues and discussions for duplicates.
+      required: true
+    - label: I read the contribution guidelines and will wait for maintainer agreement on the problem
+        and scope before submitting a PR.
+      required: true

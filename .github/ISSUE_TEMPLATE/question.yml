@@ -1,0 +1,33 @@
+name: Question
+description: Ask for help with setup, configuration, usage, or behavior.
+labels:
+- question
+body:
+- type: markdown
+  attributes:
+    value: Prefer [Discussions](https://github.com/volcano-sh/agentcube/discussions) for support questions.
+      This form is for questions, not speculative bug fixes or improvement proposals. Do not include credentials
+      or other sensitive data.
+- type: textarea
+  id: question
+  attributes:
+    label: Question and context
+    description: What are you trying to do? Describe what you tried, what happened, and what you need
+      help understanding.
+  validations:
+    required: true
+- type: textarea
+  id: environment
+  attributes:
+    label: Environment
+    description: Include the AgentCube version, relevant configuration, and Kubernetes/dependency versions
+      where applicable.
+  validations:
+    required: false
+- type: textarea
+  id: references
+  attributes:
+    label: Related documentation or discussions
+    description: Link the guidance you followed or related questions you found.
+  validations:
+    required: false
